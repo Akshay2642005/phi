@@ -1,11 +1,9 @@
+use crate::core::skill::Skill;
+use anyhow::{Result, anyhow};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
-
-use anyhow::{Result, anyhow};
-
-use crate::core::skill::Skill;
 
 pub struct SkillRegistry {
     skills: HashMap<String, Arc<dyn Skill>>,
@@ -24,9 +22,7 @@ impl SkillRegistry {
 
     pub fn resolve_execution_order(&self) -> Result<Vec<Arc<dyn Skill>>> {
         let mut ordered = Vec::new();
-
         let mut visited = HashSet::new();
-
         for skill in self.skills.values() {
             self.visit(skill.clone(), &mut visited, &mut ordered)?;
         }

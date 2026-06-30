@@ -7,7 +7,7 @@ use crate::{
     core::{
         agent::llm::LLmService,
         schema::outputs::ClassificationOutput,
-        skill::{skill_context::SkillContext, skill_definition::SkillDefinition, Skill},
+        skill::{Skill, skill_context::SkillContext, skill_definition::SkillDefinition},
     },
     skills::classification::{CLASSIFICATION_SKILL, SYSTEM_PROMPT},
 };
@@ -30,15 +30,9 @@ impl Skill for ClassificationSkill {
 
     async fn execute(&self, ctx: &mut SkillContext) -> Result<()> {
         let schema_json = serde_json::to_string_pretty(ctx.schema.as_ref())?;
-
         let prompt = format!("{}\n\n{}", SYSTEM_PROMPT, schema_json,);
-
-        let response = self.llm.prompt(&prompt).await?;
-
-        let output: ClassificationOutput = serde_json::from_str(&response)?;
-
+        let output: ClassificationOutput = self.llm.prompt_typed(&prompt).await?;
         ctx.classification = Some(output);
-
         Ok(())
     }
 }
