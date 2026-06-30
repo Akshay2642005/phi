@@ -1,0 +1,83 @@
+{
+  "schema": {
+    "database_name": "sample_db",
+    "tables": [
+      {
+        "name": "customers",
+        "columns": [
+          {
+            "name": "customer_id",
+            "data_type": "BIGINT",
+            "nullable": false
+          },
+          {
+            "name": "email",
+            "data_type": "VARCHAR",
+            "nullable": true
+          }
+        ]
+      },
+      {
+        "name": "orders",
+        "columns": [
+          {
+            "name": "order_id",
+            "data_type": "BIGINT",
+            "nullable": false
+          },
+          {
+            "name": "customer_id",
+            "data_type": "BIGINT",
+            "nullable": false
+          }
+        ]
+      }
+    ]
+  },
+  "classification": {
+    "table_roles": {
+      "customers": "master_data",
+      "orders": "transactional"
+    },
+    "semantic_types": {
+      "order_id": "IDENTIFIER",
+      "customer_id": "IDENTIFIER",
+      "email": "EMAIL"
+    }
+  },
+  "description": {
+    "table_descriptions": {
+      "orders": "Stores customer order transactions",
+      "customers": "Stores customer master records"
+    },
+    "column_descriptions": {
+      "orders.order_id": "Unique identifier for an order",
+      "customers.email": "Customer email address",
+      "customers.customer_id": "Unique identifier for a customer",
+      "orders.customer_id": "Reference to the customer who placed the order"
+    }
+  },
+  "entities": {
+    "entities": [
+      {
+        "name": "Customer",
+        "table": "customers",
+        "entity_type": "BusinessEntity"
+      },
+      {
+        "name": "Order",
+        "table": "orders",
+        "entity_type": "TransactionEntity"
+      }
+    ]
+  },
+  "relationships": {
+    "relationships": [
+      {
+        "source": "Customer",
+        "target": "Order",
+        "relationship_type": "ONE_TO_MANY"
+      }
+    ]
+  }
+}
