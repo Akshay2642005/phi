@@ -1,202 +1,403 @@
-# RAG Vector Agent — AGENTS.md
+# AI Workflow Engine — AGENTS.md
 
-**Generated:** 2026-06-26
-**Commit:** `82d81d8`
+**Generated:** 2026-07-04
+**Commit:** (current working tree)
 **Branch:** `main`
+
+> **Note:** This project was originally a RAG vector search demo. It has been
+> completely rewritten into a generic AI Workflow Engine — a DAG-driven
+> orchestration framework for AI agent skills, with a ReAct runtime on top.
+> The old `AGENTS.md` is obsolete.
+
+---
 
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Entry point / CLI | `src/main.rs` | `#[tokio::main]` async entry, rig vector search demo |
-| Vector search logic | `src/main.rs` | Embed + InMemoryVectorStore + top-n search |
-| LLM / embedding config | `src/main.rs` | Ollama client builder: `nomic-embed-text` model |
-| Embedding model | `rig` crate | `EmbeddingsBuilder::documents()` + `.build().await?` |
-| Vector store | `rig::vector_store::in_memory_store::InMemoryVectorStore` | In-memory store with ID-based lookup |
-| Document types | `src/main.rs` | `WordDefinition` struct with `#[derive(Embed)]` |
-| Dependencies | `Cargo.toml` | `rig`, `tokio`, `serde`, `anyhow` |
-| Lockfile | `Cargo.lock` | Pinned dependency tree |
-| Tests | `src/` (not yet present) | Future: `#[cfg(test)] mod tests` |
-| Sample data | `src/main.rs` | `sample_documents()` → 3 `WordDefinition` entries |
-| Output | stdout | CLI prints top-n matches with scores |
+| Entry point / CLI | `src/main.rs` | Bootstraps `AppContainer`, starts tracing |
+| Application container | `src/bootstrap/container.rs` | Constructs config, Rig runtime, `LlmServiceRef` |
+| Config (env vars) | `src/setup/config.rs` | `OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` |
+| Rig/Ollama runtime | `src/setup/rig.rs` | Wraps `rig::providers::ollama::Client` |
+| **Workflow engine** | `src/core/workflow/` | Planner, scheduler, executor, DAG graph |
+| **Workflow definition** | `src/core/workflow/definition.rs` | `Workflow<I>` — immutable workflow |
+| **Workflow builder** | `src/core/workflow/builder.rs` | `Workflow::builder().name(…).register(…)…build()` |
+| **Skill trait** | `src/core/skill/mod.rs` | `Skill<I>` — trait all skills implement |
+| **Skill registry** | `src/core/skill/mod.rs` | `SkillRegistry<I>` — stores + topological sort |
+| **LLM abstraction** | `src/core/llm/service.rs` | `LlmService` trait, `OllamaLlmService`, `LlmServiceExt` |
+| **ReAct runtime** | `src/runtime/` | Planner skill + tool skills (`RuntimeInput`) |
+| **Planner skill** | `src/runtime/planner.rs` | LLM decides which skills to run (ReAct Reason step) |
+| **Runtime plugin** | `src/runtime/plugin.rs` | Registers `PlannerSkill` + tool skills |
+| **Tool skills** | `src/tools/` | Currently: `web_search` (DuckDuckGo) |
+| **Events system** | `src/core/events/` | `EventBus` (broadcast channel), strongly typed events |
+| **Error types** | `src/core/errors/mod.rs` | `WorkflowError`, `SkillError`, `EngineError` |
+| **ID types** | `src/core/ids.rs` | `WorkflowId`, `ExecutionId`, `NodeId`, etc. |
+| **Capabilities** | `src/core/capability.rs` | Declarative requirement/provision contracts |
+| **State machines** | `src/core/workflow/state.rs` | `WorkflowState`, `NodeState` enums |
+| **Dependency resolver** | `src/core/workflow/dependency.rs` | Validates + builds DAG from `SkillRegistry` |
+| **Example** | `examples/basic_workflow.rs` | Workflow definition API demo (no AI, no execution) |
+| Tests | Inline `#[cfg(test)]` in each module | e.g. `definition.rs` has 20+ tests |
+
+---
 
 ## CODE MAP
 
-| Symbol | Type | Location | Role |
-|--------|------|----------|------|
-| `main()` | async fn | `src/main.rs` | Entry point: build Ollama client, embed docs, search |
-| `WordDefinition` | struct | `src/main.rs` | `#[derive(Embed)]` document with `id`, `word`, `definitions` |
-| `sample_documents()` | fn | `src/main.rs` | Returns `Vec<WordDefinition>` of 3 sample entries |
-| `print_matches()` | fn | `src/main.rs` | Pretty-print `(score, id, word)` tuples |
-| `print_id_matches()` | fn | `src/main.rs` | Pretty-print `(score, id)` tuples |
-| `SearchMatch` | type alias | `src/main.rs` | `(f64, String, String)` for ranked results |
-| `EmbeddingsBuilder` | struct | `rig::embeddings` | Builds embeddings from documents |
-| `InMemoryVectorStore` | struct | `rig::vector_store::in_memory_store` | In-memory vector index |
-| `VectorSearchRequest` | struct | `rig::vector_store::request` | Query builder with `.samples(n)` |
-| `VectorStoreIndex` | trait | `rig::vector_store` | Index trait with `top_n()` and `top_n_ids()` |
-| `ollama::Client` | struct | `rig::providers::ollama` | Ollama API client |
-| `ollama::ClientBuilder` | struct | `rig::providers::ollama` | Builder with `.api_key()`, `.base_url()` |
+### Entry point & bootstrap
 
-## CONVENTIONS
+| Symbol | File | Role |
+|--------|------|------|
+| `main()` | `src/main.rs` | Init tracing, load `.env`, build `AppContainer` |
+| `AppContainer` | `src/bootstrap/container.rs` | Owns `AppConfig`, `RigRuntime`, `LlmServiceRef` |
+| `AppConfig` | `src/setup/config.rs` | Reads `OLLAMA_*` env vars |
+| `RigRuntime` | `src/setup/rig.rs` | Builds `ollama::Client` |
 
-- **Rust** edition 2024, `cargo` package manager
-- **No workspace** — single crate in `Cargo.toml`
-- **`cargo fmt`** for formatting (rustfmt defaults)
-- **`cargo clippy`** for linting (no custom config)
-- **`#[tokio::main]`** on all async entry points
-- **`serde::Serialize` / `serde::Deserialize`** for all data structs
-- **`#[derive(Embed)]`** from rig for vector-embedding fields
-- **`anyhow::Result`** for fallible functions (`Result<(), anyhow::Error>`)
-- **Imports organized** by std → external → crate (rustfmt default)
-- **No pre-commit hooks**, no CI pipeline
-- **No Docker** — deployed via `cargo run`
-- **Ollama local** required at `http://localhost:11434` with `nomic-embed-text` model
+### Core engine — `src/core/`
 
-## ANTI-PATTERNS (THIS PROJECT)
+| Layer | Key Types | File |
+|-------|-----------|------|
+| **Workflow definition** | `Workflow<I>`, `WorkflowBuilder<I>` | `workflow/definition.rs`, `workflow/builder.rs` |
+| **Workflow metadata** | `WorkflowMetadata` | `workflow/metadata.rs` |
+| **Workflow graph** | `WorkflowGraph<I>` (petgraph-backed DAG) | `workflow/graph.rs` |
+| **Workflow planner** | `WorkflowPlanner`, `ExecutionPlan<I>` | `workflow/planner.rs` |
+| **Workflow scheduler** | `WorkflowScheduler` | `workflow/scheduler.rs` |
+| **Workflow executor** | `WorkflowExecutor` | `workflow/execution.rs` |
+| **Workflow engine** | `WorkflowEngine<I>`, `WorkflowResult` | `workflow/engine.rs` |
+| **Workflow node** | `WorkflowNode<I>`, `ExecutionState` | `workflow/node.rs` |
+| **State machine** | `WorkflowState`, `NodeState` | `workflow/state.rs` |
+| **Dependency resolver** | `DependencyResolver` | `workflow/dependency.rs` |
+| **Policies** | `RetryPolicy`, `TimeoutPolicy` | `workflow/policy.rs` |
+| **Skill trait + registry** | `Skill<I>`, `SkillRegistry<I>`, `SkillDefinition` | `skill/mod.rs` |
+| **LLM service** | `LlmService`, `OllamaLlmService`, `LlmServiceExt` | `llm/service.rs` |
+| **Plugin system** | `Plugin<I>`, `PluginContext<I>`, `PluginMetadata` | `plugin/mod.rs` |
+| **Artifact system** | `Artifact`, `ArtifactRef`, `ArtifactMeta` | `artifact/mod.rs` |
+| **Event bus** | `EventBus` (broadcast channel) | `events/bus.rs` |
+| **Event types** | `EngineEvent` enum + 11 event structs | `events/event_types.rs` |
+| **Error types** | `WorkflowError`, `SkillError`, `EngineError` | `errors/mod.rs` |
+| **Strong IDs** | `WorkflowId`, `ExecutionId`, `NodeId`, etc. | `ids.rs` |
+| **Capabilities** | `Capability` enum, `CapabilitySet` | `capability.rs` |
+| **Models** | `ExecutionSummary`, `WorkflowDiagnostic`, `SkillOutcome` | `models/` |
 
-- **Everything in `main.rs`**: All logic is in a single file — no module separation yet
-- **No tests**: Zero `#[cfg(test)]` modules, no integration tests
-- **No error handling beyond `anyhow`**: All `?` propagates up; no structured error types
-- **Hardcoded sample data**: `sample_documents()` returns static data; no file/DB ingestion
-- **No config file**: Ollama URL and model name are hardcoded strings
-- **No CLI args**: No `clap` or `structopt` — embedding query is hardcoded
-- **No Persistence**: `InMemoryVectorStore` is ephemeral — everything lost on restart
-- **Single provider**: Only Ollama supported; no OpenAI / Groq / Azure abstraction
-- **`Embed` derive macro on `Vec<String>`**: `definitions` field is a `Vec<String>` marked `#[embed]`, which embeds the whole vector at once
+### ReAct runtime — `src/runtime/`
 
-## Project overview
+| Symbol | File | Role |
+|--------|------|------|
+| `RuntimeInput` | `runtime/mod.rs` | Domain input: `goal: String` + optional `context` |
+| `PlannerSkill` | `runtime/planner.rs` | LLM-driven planner — decides which skills to run |
+| `PlanOutput` | `runtime/planner.rs` | JSON output from planner: reasoning, skills, complete flag |
+| `RuntimePlugin` | `runtime/plugin.rs` | Registers `PlannerSkill` + all tool skills |
+| `WorkerPlugin` | `runtime/plugin.rs` | Alias for `RuntimePlugin` |
 
-Rust-based RAG (Retrieval-Augmented Generation) agent that ingests documents, embeds them via a local Ollama instance, and performs semantic vector search. Built with the `rig` crate (Rust LLM framework). Output is printed to stdout.
+### Tools — `src/tools/`
 
-## Package manager & Rust
+| Symbol | File | Description |
+|--------|------|-------------|
+| `WebSearchSkill` | `tools/web_search.rs` | DuckDuckGo Instant Answer API search tool |
 
-- **cargo** (required). Never use other Rust package managers.
-- Rust **edition 2024** via `Cargo.toml`.
-- Dependencies in `Cargo.toml`, lockfile at `Cargo.lock`.
+---
 
-## Key commands
+## PROJECT OVERVIEW
+
+Rust-based AI Workflow Engine — a generic, DAG-driven orchestration framework
+for building AI agent workflows. Skills (units of work) are registered into a
+workflow, the engine builds a dependency graph, schedules ready nodes, and
+executes them. A ReAct runtime sits on top, where an LLM planner decides which
+tool skills to invoke to accomplish a user's goal.
+
+```
+                        ┌──────────────────┐
+                        │   AppContainer   │
+                        │  (config, llm)   │
+                        └──────┬───────────┘
+                               │
+               ┌───────────────┴───────────────┐
+               ▼                               ▼
+     ┌──────────────────┐            ┌──────────────────────┐
+     │  RuntimePlugin   │            │  (Future: domain     │
+     │  (PlannerSkill   │            │   plugins)           │
+     │   + tools)       │            └──────────────────────┘
+     └────────┬─────────┘
+              │ register
+              ▼
+     ┌─────────────────┐
+     │  SkillRegistry  │──► WorkflowPlanner ──► WorkflowGraph (DAG)
+     └─────────────────┘
+                                │
+                                ▼
+                          WorkflowEngine
+                          ┌──────────────────┐
+                          │  Scheduler::tick │──► ready nodes
+                          │  Executor::run   │──► execute skills
+                          │  loop until done │
+                          └──────────────────┘
+```
+
+### ReAct runtime loop
+
+The `PlannerSkill` implements the **Reason** half of ReAct:
+
+```
+LOOP:
+  1. PlannerSkill calls Ollama (via LlmService::prompt_typed<PlanOutput>)
+     → LLM returns JSON: { reasoning, skills_to_run, goal_complete, final_answer }
+  2. WorkflowEngine runs only the skills in skills_to_run
+  3. Results stored in WorkflowContext.slots
+  4. Repeat from step 1
+  5. When goal_complete=true, the final_answer is returned
+```
+
+---
+
+## KEY COMMANDS
 
 ```bash
 cargo build                    # compile with debug profile
 cargo build --release          # compile with optimizations
-cargo run                      # build and run the agent
-cargo test                     # run all tests (none yet)
+cargo run                      # build and run (requires OLLAMA_* env vars)
+cargo test                     # run all inline tests (60+ tests)
 cargo fmt                      # format all Rust source files
 cargo clippy                   # lint all code
 cargo check                    # fast compilation check (no binary output)
 cargo doc --open               # build and open crate docs
 cargo clean                    # remove target/ directory
+cargo run --example basic_workflow   # run the workflow definition example
 ```
 
 No Makefile, no justfile, no pre-commit hooks.
 
-## Architecture
+---
 
-```
-src/main.rs                    # Entry point: Ollama client → embeddings → vector search
-```
+## CONVENTIONS
 
-### RAG pipeline (linear, 4 steps)
+- **Rust** edition 2024, `cargo` package manager
+- **Single crate** in `Cargo.toml` (no workspace)
+- **`cargo fmt`** for formatting (rustfmt defaults)
+- **`cargo clippy`** for linting (no custom config)
+- **`#[tokio::main]`** on async entry points
+- **`serde::Serialize` / `serde::Deserialize`** for all data structs
+- **`anyhow::Result`** for fallible functions (`Result<(), anyhow::Error>`)
+- **`thiserror`** for structured error enums
+- **`async_trait`** for all `Skill<I>` implementations
+- **Imports organized** by std → external → crate (rustfmt default)
+- **No pre-commit hooks**, no CI pipeline
+- **No Docker**
 
-```
-Ollama client setup
-  → EmbeddingsBuilder::documents(sample_documents())
-  → InMemoryVectorStore::from_documents_with_id_f()
-  → index.top_n(query) / index.top_n_ids(query)
-  → Print results to stdout
-```
+---
 
-Each step is a `?`-propagated fallible call in an async `main()`. No LangGraph — the pipeline is a simple sequential Rust program.
+## LLM CONFIGURATION
 
-## LLM configuration
+Configured via environment variables (loaded from `.env` by `dotenvy`):
 
-The pipeline uses the `rig` crate with an Ollama provider. Configured inline in `src/main.rs`:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_API_KEY` | _(required)_ | Ollama API key (`Nothing` for local) |
+| `OLLAMA_BASE_URL` | _(required)_ | e.g. `http://localhost:11434` |
+| `OLLAMA_MODEL` | _(required)_ | e.g. `llama3.2` or `qwen2.5` |
 
-```rust
-let client = ollama::Client::builder()
-    .api_key(Nothing)
-    .base_url("http://localhost:11434")
-    .build()?;
-```
+The LLM is wrapped in `OllamaLlmService` (in `core/llm/service.rs`),
+which uses Rig's `client.agent(&model).build().prompt(...)` internally.
+Skills access the LLM through the `LlmService` trait — provider-agnostic.
 
-Ollama must be running locally with the `nomic-embed-text` model pulled:
+---
 
-```bash
-ollama pull nomic-embed-text
-```
+## INPUT DATA FORMAT
 
-**Key**: `rig` abstracts providers behind a common trait — switching to OpenAI/Groq/Azure requires changing the provider module and `base_url`.
+### Workflow input (`I` generic parameter)
 
-## Pipeline entry points
-
-| Symbol | Source | Description |
-|---|---|---|
-| `main()` | `src/main.rs` | Builds Ollama client, creates embeddings, runs vector search, prints results |
-
-Only one entry point. Output is printed to stdout (no file written to disk).
-
-## API endpoints
-
-None — this is a CLI-only binary. No HTTP server. Future work could add an `axum` or `actix-web` API layer.
-
-## Data flow
-
-```
-sample_documents() → Vec<WordDefinition>
-  → EmbeddingsBuilder::documents() → build().await → VectorStore
-  → VectorStoreIndex::top_n(query) → Vec<(f64, String, WordDefinition)>
-  → print_matches() → stdout
-```
-
-## Input data format (sample documents)
+The workflow engine is generic over any `I: Send + Sync + Debug + 'static`.
+The ReAct runtime uses:
 
 ```rust
-#[derive(Embed, Clone, Deserialize, Debug, Serialize, Eq, PartialEq, Default)]
-struct WordDefinition {
-    id: String,
-    word: String,
-    #[embed]
-    definitions: Vec<String>,
+pub struct RuntimeInput {
+    pub goal: String,
+    pub context: Option<String>,
 }
 ```
 
-Sample data is hardcoded in `sample_documents()` as a `Vec<WordDefinition>` with 3 entries covering fictional words (`flurbo`, `glarb-glarb`, `linglingdong`).
+### Planner output (LLM-generated JSON)
 
-## Database extraction
+```json
+{
+  "reasoning": "Need to search the web for current stock prices",
+  "skills_to_run": ["web_search"],
+  "goal_complete": false,
+  "final_answer": null
+}
+```
 
-Not applicable — the project does not perform database extraction. All data is in-memory samples. Future work could add SQLite/PostgreSQL extraction via `sqlx` or `diesel`.
+---
 
-## Important quirks & gotchas
+## API ENDPOINTS
 
-- **Single-file project**: All code lives in `src/main.rs`. Splitting into modules (`src/vector_store.rs`, `src/models.rs`) is a natural next step.
-- **Hardcoded query**: The search query `"I need to buy something in a fictional universe. What type of money can I use for this?"` is a string literal. No CLI argument parsing.
-- **In-memory only**: `InMemoryVectorStore` drops all data on exit. No persistence to disk or database.
-- **Ollama dependency**: Requires a running Ollama instance at `http://localhost:11434`. No graceful fallback if unavailable.
-- **`Nothing` API key**: `ollama::Client::builder().api_key(Nothing)` — the `Nothing` type signals no API key for Ollama's local mode. For cloud providers, use a real key.
-- **`nomic-embed-text` model**: Small, fast embedding model (137M parameters). Works well for short text. For production, consider `text-embedding-3-large` or `bge-m3`.
-- **Vector search returns `AnyhowError`**: `top_n()` and `top_n_ids()` return `Result<_, anyhow::Error>`, which propagates to `main()`'s `Result<(), anyhow::Error>`.
-- **`#[embed]` on `Vec<String>`**: The `Embed` derive macro flattens the `Vec<String>` into a single embedding vector. Each `WordDefinition` produces one embedding, not one per definition string.
+None — this is a CLI-only binary. No HTTP server. The `src/api/` module is
+empty (future: could add `axum` or `actix-web`).
 
-## Test conventions
+---
 
-- No tests exist yet. Future convention:
-  - Unit tests: `#[cfg(test)] mod tests { ... }` in each source file
-  - Integration tests: `tests/` directory for e2e scenarios
-  - Mocking: Use `mockall` for trait mocking or `wiremock` for HTTP-level testing
-  - Ollama integration tests: `#[cfg(feature = "integration")]` gated behind Cargo feature flag
+## ARCHITECTURE
 
-## Clippy (linting)
+```
+src/
+├── main.rs                    # Entry point: bootstrap container, init tracing
+├── lib.rs                     # Public crate root: re-exports all modules
+├── api/                       # (empty) future HTTP API
+├── bootstrap/
+│   ├── mod.rs
+│   └── container.rs           # AppContainer: builds config + runtime + llm
+├── core/
+│   ├── mod.rs                 # Module map
+│   ├── ids.rs                 # Strongly typed IDs (WorkflowId, ExecutionId, ...)
+│   ├── capability.rs          # Capability enum + CapabilitySet
+│   ├── artifact/
+│   │   └── mod.rs             # Artifact trait, ArtifactRef, ArtifactMeta
+│   ├── context/
+│   │   ├── mod.rs
+│   │   └── workflow_context.rs  # WorkflowContext<I> — shared run state
+│   ├── errors/
+│   │   └── mod.rs             # WorkflowError, SkillError, EngineError
+│   ├── events/
+│   │   ├── mod.rs
+│   │   ├── bus.rs             # EventBus (broadcast channel)
+│   │   └── event_types.rs     # 11 event structs + EngineEvent enum
+│   ├── llm/
+│   │   ├── mod.rs
+│   │   └── service.rs         # LlmService trait, OllamaLlmService, LlmServiceExt
+│   ├── models/
+│   │   ├── mod.rs
+│   │   ├── diagnostics.rs     # WorkflowDiagnostic, DiagnosticLevel
+│   │   └── execution.rs       # ExecutionSummary, SkillOutcome, ExecutionMetadata
+│   ├── plugin/
+│   │   └── mod.rs             # Plugin<I> trait, PluginContext<I>
+│   ├── skill/
+│   │   └── mod.rs             # Skill<I>, SkillRegistry<I>, SkillDefinition
+│   └── workflow/
+│       ├── mod.rs
+│       ├── builder.rs          # WorkflowBuilder<I> + WorkflowBuildError
+│       ├── definition.rs       # Workflow<I> — immutable definition
+│       ├── dependency.rs       # DependencyResolver
+│       ├── engine.rs           # WorkflowEngine<I> — top-level orchestrator
+│       ├── events.rs           # WorkflowEventSink adapter
+│       ├── execution.rs        # WorkflowExecutor — runs individual skills
+│       ├── graph.rs            # WorkflowGraph<I> — petgraph-backed DAG
+│       ├── metadata.rs         # WorkflowMetadata
+│       ├── node.rs             # WorkflowNode<I>, ExecutionState
+│       ├── planner.rs          # WorkflowPlanner, ExecutionPlan<I>
+│       ├── policy.rs           # RetryPolicy, TimeoutPolicy
+│       ├── scheduler.rs        # WorkflowScheduler
+│       └── state.rs            # WorkflowState, NodeState enums
+├── runtime/
+│   ├── mod.rs                  # RuntimeInput, WorkerInput
+│   ├── planner.rs              # PlannerSkill — the ReAct "brain"
+│   └── plugin.rs               # RuntimePlugin — registers planner + tools
+├── setup/
+│   ├── mod.rs
+│   ├── config.rs               # AppConfig from env vars
+│   └── rig.rs                  # RigRuntime wrapper
+└── tools/
+    ├── mod.rs
+    └── web_search.rs           # WebSearchSkill (DuckDuckGo)
+```
+
+---
+
+## DATA FLOW
+
+```
+1. main()
+   ├── AppContainer::build()
+   │   ├── AppConfig::from_env()  (read OLLAMA_* vars)
+   │   ├── RigRuntime::new()      (build ollama::Client)
+   │   └── OllamaLlmService::new() (wrap in LlmService trait)
+   └── tracing::info!("AI Workflow Engine ready")
+
+2. (Future: CLI or API triggers a workflow run)
+
+3. RuntimePlugin::register()
+   ├── PlannerSkill (LLM decides which skills to run)
+   └── WebSearchSkill (tool skill)
+
+4. WorkflowEngine::run()
+   ├── WorkflowPlanner::plan()       → ExecutionPlan (DAG)
+   ├── LOOP:
+   │   ├── WorkflowScheduler::tick() → ready_nodes
+   │   ├── WorkflowExecutor::execute_node()
+   │   │   └── Skill::execute(ctx)   → Result<()>
+   │   └── (check complete/deadlock)
+   └── WorkflowResult { summary }
+```
+
+### ReAct detail
+
+```
+PlannerSkill::execute()
+  → Build prompt: goal + available skills + prior results
+  → llm.prompt_typed::<PlanOutput>(prompt)
+  → Parse JSON: { reasoning, skills_to_run, goal_complete }
+  → ctx.set("plan", output)
+
+  If goal_complete=false:
+    → Engine runs skills from skills_to_run
+    → Planner runs again with updated context
+  If goal_complete=true:
+    → final_answer is returned
+```
+
+---
+
+## TEST CONVENTIONS
+
+- Unit tests: `#[cfg(test)] mod tests { ... }` inline in each source file
+- No integration tests directory yet
+- No mocking framework yet (skills tested with real LLM or stubs)
+- Ollama integration tests: not yet gated behind a feature flag
+- Current test count: **60+ tests** across `definition.rs`, `builder.rs`,
+  `metadata.rs`, `graph.rs`
+
+---
+
+## CLIPPY (LINTING)
 
 - No custom `clippy.toml` — uses default clippy rules
 - Run with: `cargo clippy`
-- Common warnings to expect: `too_many_arguments`, `type_complexity`, `large_enum_variant`
-- All clippy warnings are currently allowed (no `#![deny(clippy::all)]` in crate root)
+- `#![allow(dead_code, unused)]` at crate root — engine framework has
+  intentionally unused items until domain workflows are registered
 
-## Troubleshooting
+---
+
+## IMPORTANT QUIRKS & GOTCHAS
+
+- **No execution path wired yet**: `main()` builds `AppContainer` and logs —
+  but does not trigger any workflow run. The engine, planner, scheduler, and
+  executor are fully implemented but no CLI command or API endpoint invokes
+  them yet.
+- **Ollama dependency**: Requires a running Ollama instance at
+  `OLLAMA_BASE_URL` with the model specified in `OLLAMA_MODEL`.
+- **`api_key(Nothing)`**: For local Ollama, use an empty string or any value
+  as the API key. For cloud providers, use a real key.
+- **`LlmService` abstraction**: Only `OllamaLlmService` is implemented.
+  Switching to OpenAI/Groq/Azure requires implementing `LlmService` for a new
+  provider.
+- **`examples/basic_workflow.rs`**: Demonstrates the `Workflow::builder()` API
+  only — no LLM calls, no execution, purely definition + inspection.
+- **`RuntimePlugin` not wired into `main()`**: The ReAct runtime (`PlannerSkill`
+  + `WebSearchSkill`) is defined but not connected to `AppContainer` yet.
+- **Event bus plumbed but unused**: `EventBus` is implemented but `main()`
+  does not attach it to the engine.
+- **Single-file ReAct loop**: The `WorkflowEngine::run()` DAG loop is
+  sequential (one skill at a time). Parallel execution is prepared for but
+  not enabled.
+- **Plugin system is a stub**: `Plugin<I>` trait exists and `RuntimePlugin`
+  implements it, but there's no plugin loader, discovery, or dynamic linking.
+- **`petgraph` dependency**: Used internally by `WorkflowGraph`. No other
+  module imports it — it is fully encapsulated behind the `WorkflowGraph` API.
+
+---
+
+## TROUBLESHOOTING
 
 | Problem | Likely cause | Fix |
 |---------|-------------|-----|
-| `connection refused` | Ollama not running | Start `ollama serve` or `ollama pull nomic-embed-text` |
-| `model not found` | `nomic-embed-text` not pulled | Run `ollama pull nomic-embed-text` |
-| `api_key` error | Using cloud provider with no key | Set `OPENAI_API_KEY` env var or use `.api_key("ollama")` |
-| Slow first run | Rust compiling dependencies | Use `cargo build` once, then `cargo run` reuses artifacts |
+| `OLLAMA_API_KEY not set` | Missing `.env` file | Create `.env` with `OLLAMA_API_KEY=...`, `OLLAMA_BASE_URL=...`, `OLLAMA_MODEL=...` |
+| `connection refused` | Ollama not running | Start `ollama serve` |
+| `model not found` | Model not pulled | Run `ollama pull <model>` |
+| Slow first build | Rust compiling deps | Use `cargo build` once, then `cargo run` reuses artifacts |
+| `dead_code` warnings | Framework with no domain workflows yet | See `#![allow(dead_code, unused)]` in `main.rs` and `lib.rs` |
