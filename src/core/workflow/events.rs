@@ -15,31 +15,16 @@ pub use crate::core::events::{
     WorkflowCancelledEvent, WorkflowCompletedEvent, WorkflowFailedEvent, WorkflowStartedEvent,
 };
 
-// ── Legacy sink (kept for backwards compatibility) ────────────────────────────
-
-/// Receive [`EngineEvent`]s from the engine.
-///
-/// Implementations must be `Send + Sync` because the engine may (in future)
-/// emit events from async tasks.
-///
-/// # Deprecation notice
-/// Prefer subscribing to the [`crate::core::events::EventBus`] directly.
-/// This trait will be removed once all call sites are migrated.
 pub trait WorkflowEventSink: Send + Sync {
-    /// Called synchronously by the engine whenever an event occurs.
     fn on_event(&self, event: EngineEvent);
 }
 
-// ── No-op sink ────────────────────────────────────────────────────────────────
-
-/// A sink that discards all events.
 pub struct NoopEventSink;
 
 impl WorkflowEventSink for NoopEventSink {
     fn on_event(&self, _event: EngineEvent) {}
 }
 
-/// A sink that logs every event at `DEBUG` level via `tracing`.
 pub struct TracingEventSink;
 
 impl WorkflowEventSink for TracingEventSink {

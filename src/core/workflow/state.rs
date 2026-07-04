@@ -34,50 +34,19 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-// ── WorkflowState ─────────────────────────────────────────────────────────────
-
-/// Execution lifecycle state of an entire workflow run.
-///
-/// Drives the engine's top-level state machine.  The scheduler and executor
-/// transition the workflow through these states; external observers (event
-/// bus, monitoring) read it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WorkflowState {
-    /// Workflow has been created but the planner has not started yet.
     Pending,
-
-    /// The planner is building the execution plan and dependency graph.
     Planning,
-
-    /// The plan is ready; waiting for the first execution tick.
-    ///
-    /// This state exists so that pre-flight validation can happen between
-    /// planning and the first skill execution.
     Ready,
-
-    /// One or more skills are currently executing.
     Running,
-
-    /// Execution is paused, waiting for an external signal.
-    ///
-    /// Used by human-in-the-loop nodes, approval gates, or external
-    /// callbacks.  Transitions back to `Running` when the signal arrives.
     Waiting,
-
-    /// All skills completed successfully.
     Completed,
-
-    /// At least one skill failed and the error policy did not allow
-    /// continuation.
     Failed,
-
-    /// The workflow was cancelled before completion.
     Cancelled,
 }
 
 impl WorkflowState {
-    /// `true` if the workflow has reached a terminal state and will not
-    /// progress further.
     #[inline]
     pub fn is_terminal(&self) -> bool {
         matches!(
@@ -86,13 +55,11 @@ impl WorkflowState {
         )
     }
 
-    /// `true` if the workflow completed without errors.
     #[inline]
     pub fn is_success(&self) -> bool {
         matches!(self, WorkflowState::Completed)
     }
 
-    /// `true` if the workflow is actively executing (Running or Waiting).
     #[inline]
     pub fn is_active(&self) -> bool {
         matches!(self, WorkflowState::Running | WorkflowState::Waiting)
@@ -114,48 +81,20 @@ impl fmt::Display for WorkflowState {
     }
 }
 
-// ── NodeState ─────────────────────────────────────────────────────────────────
-
-/// Execution lifecycle state of a single node (skill instance) in the graph.
-///
-/// The scheduler drives transitions from `Pending` → `Ready`; the executor
-/// drives `Ready` → `Running` → terminal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NodeState {
-    /// Waiting for one or more dependencies to complete.
     Pending,
-
-    /// All dependencies have completed; ready to be dispatched to the executor.
     Ready,
-
-    /// Currently executing.
     Running,
-
-    /// Execution completed successfully.
     Completed,
-
-    /// Skipped — either the node was excluded by a conditional, or a
-    /// preceding node failed under a `continue_on_failure` policy.
     Skipped,
-
-    /// Execution failed.
-    ///
-    /// `reason` is a human-readable message preserved for logs and
-    /// diagnostics.  Avoid storing structured data here; emit an event
-    /// instead.
     Failed {
-        /// Human-readable failure reason.
         reason: String,
     },
-
-    /// The execution was cancelled before this node ran or while it was
-    /// running.
     Cancelled,
 }
 
 impl NodeState {
-    /// `true` if the node has reached a terminal state and will not
-    /// transition further.
     #[inline]
     pub fn is_terminal(&self) -> bool {
         matches!(
@@ -167,13 +106,11 @@ impl NodeState {
         )
     }
 
-    /// `true` if the node completed without errors.
     #[inline]
     pub fn is_success(&self) -> bool {
         matches!(self, NodeState::Completed)
     }
 
-    /// `true` if the node is actively executing.
     #[inline]
     pub fn is_active(&self) -> bool {
         matches!(self, NodeState::Running)

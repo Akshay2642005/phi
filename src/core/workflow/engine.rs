@@ -56,71 +56,47 @@ use crate::core::{
     },
 };
 
-// ── Workflow result ───────────────────────────────────────────────────────────
-
-/// The outcome of a completed workflow run.
-///
-/// Wraps an [`ExecutionSummary`] and exposes convenience accessors for
-/// the most commonly needed fields.
 #[derive(Debug)]
 pub struct WorkflowResult {
-    /// Full structured execution summary.
     pub summary: ExecutionSummary,
 }
 
 impl WorkflowResult {
-    /// `true` when every planned skill succeeded.
     #[inline]
     pub fn is_success(&self) -> bool {
         self.summary.is_success()
     }
 
-    /// Backwards-compatible: `true` when every skill succeeded.
     #[inline]
     pub fn success(&self) -> bool {
         self.summary.is_success()
     }
 
-    /// Skill IDs that completed successfully (in execution order).
     pub fn completed(&self) -> Vec<&str> {
         self.summary.completed_skills().collect()
     }
 
-    /// Skill IDs that failed.
     pub fn failed(&self) -> Vec<&str> {
         self.summary.failed_skills().collect()
     }
 
-    /// Total elapsed time in milliseconds.
     #[inline]
     pub fn elapsed_ms(&self) -> u64 {
         self.summary.metadata.elapsed_ms
     }
 
-    /// Backwards-compat public field-style access.
     pub fn errors(&self) -> &[String] {
         &self.summary.errors
     }
 }
 
-// ── Engine ────────────────────────────────────────────────────────────────────
-
-/// Top-level AI workflow orchestrator.
-///
-/// `I` is the domain input type.  The engine is generic so it can run any
-/// workflow without modification.
 pub struct WorkflowEngine<I>
 where
     I: Send + Sync + std::fmt::Debug + 'static,
 {
     executor: WorkflowExecutor,
-
-    /// Optional event bus for structured event emission.
     event_bus: Option<EventBus>,
-
-    /// Legacy event sink (kept for backwards compatibility).
     event_sink: Option<Box<dyn WorkflowEventSink>>,
-
     _phantom: std::marker::PhantomData<I>,
 }
 
@@ -128,7 +104,6 @@ impl<I> WorkflowEngine<I>
 where
     I: Send + Sync + std::fmt::Debug + 'static,
 {
-    /// Create a new engine with default policies.
     pub fn new() -> Self {
         Self {
             executor: WorkflowExecutor::new(),
@@ -138,44 +113,21 @@ where
         }
     }
 
-    /// Attach an [`EventBus`] for structured event emission.
-    ///
-    /// Preferred over `with_event_sink` for new code.
     pub fn with_event_bus(mut self, bus: EventBus) -> Self {
         self.event_bus = Some(bus);
         self
     }
 
-    /// Attach a legacy event sink for workflow lifecycle events.
-    ///
-    /// Prefer [`Self::with_event_bus`] for new code.
     pub fn with_event_sink(mut self, sink: Box<dyn WorkflowEventSink>) -> Self {
         self.event_sink = Some(sink);
         self
     }
 
-    /// Attach a custom executor (e.g., with timeout or retry config).
     pub fn with_executor(mut self, executor: WorkflowExecutor) -> Self {
         self.executor = executor;
         self
     }
 
-    /// Run the workflow defined by `registry` against `ctx`.
-    ///
-    /// # Execution loop
-    ///
-    /// 1. **Plan**: resolve dependencies, build the DAG.
-    /// 2. **Schedule**: promote root nodes (no uncompleted dependencies) to `Ready`.
-    /// 3. **Loop**:
-    ///    - Tick the scheduler to find newly-ready nodes.
-    ///    - If ready nodes exist, execute each one.
-    ///    - If no ready nodes and the graph is complete, finish.
-    ///    - If no ready nodes but nodes are still pending, report deadlock.
-    /// 4. Return [`WorkflowResult`].
-    ///
-    /// The loop structure naturally supports future concurrent execution:
-    /// the tick identifies all currently-executable nodes, and a future
-    /// version can dispatch them via `JoinSet` / `FuturesUnordered`.
     pub async fn run(
         &self,
         registry: &SkillRegistry<I>,
@@ -190,7 +142,6 @@ where
             "Workflow run started"
         );
 
-        // ── Step 1: Plan ──────────────────────────────────────────────────────
         ctx.set_workflow_state(WorkflowState::Planning);
 
         let plan = WorkflowPlanner::plan(registry)?;
@@ -227,12 +178,9 @@ where
         let mut summary = ExecutionSummary::new(execution_id, workflow_id);
         summary.state = WorkflowState::Running;
 
-        // ── Step 2: DAG-driven execution loop ─────────────────────────────────
         loop {
-            // (a) Tick the scheduler — promote Pending → Ready where possible.
             let ready_nodes = WorkflowScheduler::tick(&mut graph);
 
-            // (b) Check termination: all nodes terminal.
             if ready_nodes.is_empty() && graph.is_complete() {
                 tracing::debug!(
                     execution_id = %execution_id,
@@ -241,25 +189,18 @@ where
                 break;
             }
 
-            // (c) Deadlock guard: pending nodes exist but none can advance.
             if ready_nodes.is_empty() {
                 WorkflowScheduler::check_deadlock(&graph)?;
-                // If check_deadlock didn't return Err, nodes are Running/Waiting.
-                // Wait briefly then retry (in future: use watch channel).
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-                // Safety check: if nothing changed, we're stuck.
                 let still_ready = WorkflowScheduler::tick(&mut graph);
                 if still_ready.is_empty() && !graph.is_complete() {
-                    // Re-check with the deadlock checker for a clear error.
                     WorkflowScheduler::check_deadlock(&graph)?;
                 }
                 continue;
             }
 
-            // (d) Execute all ready nodes.
             for node_id in ready_nodes.iter().copied() {
-                // Resolve the skill from the graph.
                 let Some(skill) = graph.skill(node_id) else {
                     tracing::warn!(
                         execution_id = %execution_id,
@@ -269,8 +210,7 @@ where
                     continue;
                 };
 
-                let skill = skill.clone(); // cheap Arc clone
-
+                let skill = skill.clone();
                 let attempt = 1u32;
 
                 self.emit(EngineEvent::SkillStarted(SkillStartedEvent {
@@ -355,7 +295,6 @@ where
             }
         }
 
-        // ── Step 3: Finalise ──────────────────────────────────────────────────
         let elapsed_ms = ctx.elapsed().as_millis() as u64;
         let (done, failed, _skipped) = graph.completion_summary();
         let success = failed == 0 && summary.errors.is_empty();
@@ -386,8 +325,6 @@ where
 
         Ok(WorkflowResult { summary })
     }
-
-    // ── Event emission ────────────────────────────────────────────────────────
 
     fn emit(&self, event: EngineEvent) {
         if let Some(bus) = &self.event_bus {

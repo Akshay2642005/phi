@@ -14,33 +14,26 @@ use crate::{
     setup::{config::AppConfig, rig::RigRuntime},
 };
 
-/// All long-lived, shared application services.
 pub struct AppContainer {
     pub config: Arc<AppConfig>,
     pub runtime: Arc<RigRuntime>,
-    /// Provider-agnostic LLM handle — pass clones to skills at startup.
     pub llm: LlmServiceRef,
 }
 
 impl AppContainer {
-    /// Build the container from environment variables.
     pub fn build() -> anyhow::Result<Self> {
         let config = AppConfig::from_env()?;
-
         let runtime = Arc::new(RigRuntime::new(
             config.ollama_api_key.clone(),
             config.ollama_base_url.clone(),
             config.ollama_model.clone(),
         )?);
-
         let client = ollama::Client::builder()
             .api_key(config.ollama_api_key.clone())
             .base_url(config.ollama_base_url.clone())
             .build()?;
-
         let llm: LlmServiceRef =
             Arc::new(OllamaLlmService::new(client, config.ollama_model.clone()));
-
         Ok(Self {
             config: Arc::new(config),
             runtime,

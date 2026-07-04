@@ -9,17 +9,10 @@
 
 use serde::{Deserialize, Serialize};
 
-// ── Severity ──────────────────────────────────────────────────────────────────
-
-/// Severity level of a [`WorkflowDiagnostic`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DiagnosticLevel {
-    /// Informational — normal operating notes.
     Info,
-    /// Warning — something unexpected but non-fatal occurred.
     Warning,
-    /// Error — a recoverable problem; included here when execution continued
-    /// past the failure (e.g., `continue_on_failure` policy).
     Error,
 }
 
@@ -33,30 +26,15 @@ impl std::fmt::Display for DiagnosticLevel {
     }
 }
 
-// ── Diagnostic entry ──────────────────────────────────────────────────────────
-
-/// A single structured diagnostic message emitted during a workflow run.
-///
-/// Replaces the old `DiagnosticEntry` in `workflow_context.rs` with a version
-/// that references typed IDs and carries structured metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowDiagnostic {
-    /// The skill that produced this message (if skill-scoped).
     pub skill_id: Option<String>,
-
-    /// Human-readable message.
     pub message: String,
-
-    /// Severity level.
     pub level: DiagnosticLevel,
-
-    /// Optional structured metadata (kept as string pairs to avoid
-    /// `serde_json::Value` in core).
     pub tags: Vec<(String, String)>,
 }
 
 impl WorkflowDiagnostic {
-    /// Create an info-level diagnostic from a skill.
     pub fn info(skill_id: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             skill_id: Some(skill_id.into()),
@@ -66,7 +44,6 @@ impl WorkflowDiagnostic {
         }
     }
 
-    /// Create a warning-level diagnostic from a skill.
     pub fn warn(skill_id: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             skill_id: Some(skill_id.into()),
@@ -76,7 +53,6 @@ impl WorkflowDiagnostic {
         }
     }
 
-    /// Create an error-level diagnostic from a skill.
     pub fn error(skill_id: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             skill_id: Some(skill_id.into()),
@@ -86,7 +62,6 @@ impl WorkflowDiagnostic {
         }
     }
 
-    /// Create an engine-level diagnostic (no skill scope).
     pub fn engine(level: DiagnosticLevel, message: impl Into<String>) -> Self {
         Self {
             skill_id: None,
@@ -96,7 +71,6 @@ impl WorkflowDiagnostic {
         }
     }
 
-    /// Attach a key/value tag.
     pub fn with_tag(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.tags.push((key.into(), value.into()));
         self

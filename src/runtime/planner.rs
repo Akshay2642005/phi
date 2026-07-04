@@ -24,25 +24,13 @@ use crate::core::{
 };
 use crate::runtime::RuntimeInput;
 
-// ── Output type ───────────────────────────────────────────────────────────────
-
-/// The planner's decision for one ReAct step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanOutput {
-    /// One-sentence reasoning explaining the plan.
     pub reasoning: String,
-    /// Ordered list of skill IDs to run in this step.
-    ///
-    /// Skills are run in dependency order by the engine; the planner only
-    /// needs to name them, not order them.
     pub skills_to_run: Vec<String>,
-    /// `true` when the planner believes the goal is fully accomplished.
     pub goal_complete: bool,
-    /// Final answer to present to the user when `goal_complete` is true.
     pub final_answer: Option<String>,
 }
-
-// ── Skill definition ──────────────────────────────────────────────────────────
 
 pub const DEFINITION: SkillDefinition = SkillDefinition {
     id: "plan",
@@ -52,15 +40,11 @@ pub const DEFINITION: SkillDefinition = SkillDefinition {
     dependencies: &[],
 };
 
-// ── Skill implementation ──────────────────────────────────────────────────────
-
 pub struct PlannerSkill {
     pub llm: LlmServiceRef,
-    /// Descriptions of every available tool skill, injected at construction.
     pub available_skills: Vec<SkillSummary>,
 }
 
-/// A brief description of a skill shown to the planner LLM.
 #[derive(Debug, Clone)]
 pub struct SkillSummary {
     pub id: &'static str,
@@ -86,10 +70,8 @@ impl Skill<RuntimeInput> for PlannerSkill {
         let goal = &ctx.input.goal;
         let extra_context = ctx.input.context.as_deref().unwrap_or("none");
 
-        // Summarise what has been done so far (if anything)
         let prior_results = build_prior_results_summary(ctx);
 
-        // List available skills for the LLM
         let skills_list: String = self
             .available_skills
             .iter()
@@ -143,8 +125,6 @@ Respond with this exact JSON shape:
         Ok(())
     }
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn build_prior_results_summary<I>(ctx: &WorkflowContext<I>) -> String
 where

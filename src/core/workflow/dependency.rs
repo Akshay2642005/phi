@@ -18,28 +18,17 @@
 
 use crate::core::{errors::WorkflowError, skill::SkillRegistry, workflow::graph::WorkflowGraph};
 
-/// Validates a [`SkillRegistry`] and produces a [`WorkflowGraph`].
 pub struct DependencyResolver;
 
 impl DependencyResolver {
-    /// Build and validate a [`WorkflowGraph`] from `registry`.
-    ///
-    /// # Errors
-    /// - [`WorkflowError::MissingDependency`] — a skill lists a dependency
-    ///   that is not registered.
-    /// - [`WorkflowError::DependencyCycle`] — the dependency graph contains
-    ///   at least one cycle.
-    /// - [`WorkflowError::EmptyPlan`] — no skills are registered.
     pub fn resolve<I>(registry: &SkillRegistry<I>) -> Result<WorkflowGraph<I>, WorkflowError>
     where
         I: Send + Sync + std::fmt::Debug + 'static,
     {
-        // ── Guard: empty registry ─────────────────────────────────────────────
         if registry.skills().is_empty() {
             return Err(WorkflowError::EmptyPlan);
         }
 
-        // ── Pass 1: existence check ───────────────────────────────────────────
         for (id, skill) in registry.iter() {
             for dep_id in skill.definition().dependencies {
                 if !registry.contains(dep_id) {
@@ -51,11 +40,8 @@ impl DependencyResolver {
             }
         }
 
-        // ── Pass 2: build graph ───────────────────────────────────────────────
         let mut graph = WorkflowGraph::new();
 
-        // Add all nodes first so we can add edges safely.
-        // Deterministic insertion order for reproducibility.
         let mut ids: Vec<&str> = registry.skills().keys().map(String::as_str).collect();
         ids.sort_unstable();
 
@@ -64,17 +50,14 @@ impl DependencyResolver {
             graph.add_node(skill);
         }
 
-        // Add edges: for each `dep` listed by a skill, add edge dep → skill.
         for id in &ids {
             let skill = registry.skills()[*id].clone();
             let def = skill.definition();
             for dep_id in def.dependencies {
-                // Both nodes are guaranteed to exist (pass 1 checked).
                 graph.add_dependency(dep_id, def.id);
             }
         }
 
-        // ── Pass 3: cycle detection ───────────────────────────────────────────
         if let Some(offender) = graph.detect_cycle() {
             return Err(WorkflowError::DependencyCycle(offender.to_string()));
         }

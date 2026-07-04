@@ -27,23 +27,12 @@ use crate::core::{
     workflow::{graph::WorkflowGraph, policy::RetryPolicy, state::NodeState},
 };
 
-// ── Executor ──────────────────────────────────────────────────────────────────
-
-/// Runs individual skills and records outcomes in the graph and context.
 pub struct WorkflowExecutor {
-    /// Optional per-skill execution timeout.
-    ///
-    /// `None` means no timeout is applied.
     pub timeout: Option<Duration>,
-
-    /// Retry policy applied on transient skill failures.
-    ///
-    /// See [`RetryPolicy`] for details.
     pub retry_policy: RetryPolicy,
 }
 
 impl WorkflowExecutor {
-    /// Create an executor with no timeout and the default retry policy.
     pub fn new() -> Self {
         Self {
             timeout: None,
@@ -51,7 +40,6 @@ impl WorkflowExecutor {
         }
     }
 
-    /// Create an executor with a specific timeout.
     pub fn with_timeout(timeout: Duration) -> Self {
         Self {
             timeout: Some(timeout),
@@ -59,18 +47,6 @@ impl WorkflowExecutor {
         }
     }
 
-    /// Execute a single skill node.
-    ///
-    /// # Flow
-    /// 1. Transition the node to `Running`.
-    /// 2. Call `skill.execute(ctx)`, optionally wrapped in a timeout.
-    /// 3. On success: transition to `Completed`, mark in context.
-    /// 4. On failure: transition to `Failed`, mark in context, wrap error.
-    ///
-    /// # Cancellation
-    /// Before executing, the executor checks `ctx.is_cancelled()`.  If the
-    /// workflow has been cancelled the node is transitioned to `Skipped` and
-    /// [`WorkflowError::Cancelled`] is returned.
     pub async fn execute_node<I>(
         &self,
         skill: &SkillRef<I>,
@@ -90,7 +66,6 @@ impl WorkflowExecutor {
             "Executor: execute_node called"
         );
 
-        // ── Cancellation check ────────────────────────────────────────────────
         if ctx.is_cancelled() {
             graph.transition(def.id, NodeState::Skipped);
             tracing::info!(
@@ -101,7 +76,6 @@ impl WorkflowExecutor {
             return Err(WorkflowError::Cancelled);
         }
 
-        // ── Transition to Running ─────────────────────────────────────────────
         graph.transition(def.id, NodeState::Running);
 
         tracing::info!(
@@ -114,12 +88,10 @@ impl WorkflowExecutor {
             "Executing skill"
         );
 
-        // ── Execute (with optional timeout) ───────────────────────────────────
         let start = std::time::Instant::now();
         let result = self.run_with_policy(skill, ctx).await;
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
-        // ── Record outcome ────────────────────────────────────────────────────
         match result {
             Ok(()) => {
                 graph.transition(def.id, NodeState::Completed);
@@ -161,14 +133,6 @@ impl WorkflowExecutor {
         }
     }
 
-    // ── Internal helpers ──────────────────────────────────────────────────────
-
-    /// Run the skill, applying retry and (stub) timeout policy.
-    ///
-    /// The current implementation only applies the retry count; timeout
-    /// wrapping (`tokio::time::timeout`) is left as a TODO stub to avoid
-    /// introducing a `Future` lifetime complexity before parallel execution is
-    /// needed.
     async fn run_with_policy<I>(
         &self,
         skill: &SkillRef<I>,

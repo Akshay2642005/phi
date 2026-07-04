@@ -31,9 +31,6 @@ use crate::core::{
 };
 use crate::runtime::RuntimeInput;
 
-// ── API response shapes ───────────────────────────────────────────────────────
-
-/// Raw DuckDuckGo API response (only the fields we care about).
 #[derive(Debug, Deserialize)]
 struct DdgResponse {
     #[serde(rename = "AbstractText")]
@@ -54,24 +51,15 @@ struct DdgRelatedTopic {
     first_url: String,
 }
 
-// ── Output type ───────────────────────────────────────────────────────────────
-
-/// Result written to the `"web_search"` context slot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebSearchOutput {
-    /// The search query that was issued.
     pub query: String,
-    /// Short abstract paragraph from the top result.
     pub abstract_text: String,
-    /// URL of the top result.
     pub abstract_url: String,
-    /// Source name (e.g. "Wikipedia").
     pub abstract_source: String,
-    /// Related snippets (up to 5).
     pub related: Vec<RelatedResult>,
 }
 
-/// A single related search result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelatedResult {
     pub text: String,
@@ -79,8 +67,6 @@ pub struct RelatedResult {
 }
 
 impl WebSearchOutput {
-    /// Format the search results into a compact string suitable for feeding
-    /// back into an LLM prompt.
     pub fn as_context(&self) -> String {
         let mut parts = Vec::new();
 
@@ -109,8 +95,6 @@ impl WebSearchOutput {
     }
 }
 
-// ── Skill definition ──────────────────────────────────────────────────────────
-
 pub const DEFINITION: SkillDefinition = SkillDefinition {
     id: "web_search",
     name: "Web Search",
@@ -118,8 +102,6 @@ pub const DEFINITION: SkillDefinition = SkillDefinition {
     version: "1.0.0",
     dependencies: &[],
 };
-
-// ── Skill implementation ──────────────────────────────────────────────────────
 
 pub struct WebSearchSkill {
     client: Client,
@@ -195,9 +177,6 @@ impl Skill<RuntimeInput> for WebSearchSkill {
     }
 }
 
-// ── URL encoding helper ───────────────────────────────────────────────────────
-
-/// Minimal percent-encoding for query strings (spaces → `+`, special chars → `%XX`).
 fn urlencoding(s: &str) -> String {
     s.chars()
         .map(|c| match c {

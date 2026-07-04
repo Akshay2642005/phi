@@ -14,23 +14,11 @@ use crate::core::{
     workflow::{dependency::DependencyResolver, graph::WorkflowGraph},
 };
 
-// ── Execution plan ────────────────────────────────────────────────────────────
-
-/// The output of [`WorkflowPlanner::plan`].
-///
-/// Contains both a topologically-ordered `Vec` of skills (for sequential
-/// execution) and the full [`WorkflowGraph`] (for future parallel scheduling).
 pub struct ExecutionPlan<I>
 where
     I: Send + Sync + std::fmt::Debug + 'static,
 {
-    /// Skills in topological execution order.
-    ///
-    /// In the current implementation the executor walks this list sequentially.
-    /// Future parallel implementations should use `graph` instead.
     pub ordered_skills: Vec<SkillRef<I>>,
-
-    /// The full dependency DAG, retained for the scheduler.
     pub graph: WorkflowGraph<I>,
 }
 
@@ -38,7 +26,6 @@ impl<I> ExecutionPlan<I>
 where
     I: Send + Sync + std::fmt::Debug + 'static,
 {
-    /// Number of skills in the plan.
     pub fn skill_count(&self) -> usize {
         self.ordered_skills.len()
     }
@@ -61,35 +48,15 @@ where
     }
 }
 
-// ── Planner ───────────────────────────────────────────────────────────────────
-
-/// Produces an [`ExecutionPlan`] from a [`SkillRegistry`].
-///
-/// # Usage
-/// ```ignore
-/// let plan = WorkflowPlanner::plan(&registry)?;
-/// // hand off to WorkflowScheduler / WorkflowExecutor
-/// ```
 pub struct WorkflowPlanner;
 
 impl WorkflowPlanner {
-    /// Build an execution plan from `registry`.
-    ///
-    /// Steps:
-    /// 1. Validate all dependencies exist.
-    /// 2. Build the petgraph DAG.
-    /// 3. Detect cycles.
-    /// 4. Topologically sort the DAG.
-    /// 5. Return an [`ExecutionPlan`] with both the ordered list and the DAG.
     pub fn plan<I>(registry: &SkillRegistry<I>) -> Result<ExecutionPlan<I>, WorkflowError>
     where
         I: Send + Sync + std::fmt::Debug + 'static,
     {
-        // Validate and build the graph.
         let graph = DependencyResolver::resolve(registry)?;
 
-        // Derive the linear order from the registry's own DFS-based sort.
-        // This is consistent with the graph since both use topological order.
         let ordered_skills = registry
             .resolve_execution_order()
             .map_err(|e| WorkflowError::DependencyCycle(e.to_string()))?;

@@ -26,27 +26,13 @@ use crate::core::{
     workflow::{graph::WorkflowGraph, state::NodeState},
 };
 
-// ── Scheduler ─────────────────────────────────────────────────────────────────
-
-/// Drives node state transitions in a [`WorkflowGraph`].
-///
-/// Call [`WorkflowScheduler::tick`] after each node completes to advance the
-/// graph.  The scheduler does not own the graph — the engine passes it as a
-/// `&mut` parameter so the executor can also inspect it.
 pub struct WorkflowScheduler;
 
 impl WorkflowScheduler {
-    /// Promote all `Pending` nodes whose dependencies are `Completed` to
-    /// `Ready`, then return the IDs of those newly-ready nodes.
-    ///
-    /// This should be called:
-    /// 1. Once before the first execution tick (to find root nodes).
-    /// 2. After each node transitions to `Completed` or `Failed`.
     pub fn tick<I>(graph: &mut WorkflowGraph<I>) -> Vec<&'static str>
     where
         I: Send + Sync + std::fmt::Debug + 'static,
     {
-        // Collect first to avoid borrow conflicts with graph.transition().
         let ready: Vec<&'static str> = graph.ready_nodes().collect();
 
         for &id in &ready {
@@ -63,14 +49,6 @@ impl WorkflowScheduler {
         ready
     }
 
-    /// Validate that the workflow can make forward progress.
-    ///
-    /// Returns `Ok(())` when either:
-    /// - The workflow is already complete, **or**
-    /// - At least one node is `Ready` or `Running`.
-    ///
-    /// Returns [`WorkflowError::SchedulerDeadlock`] if nodes are still
-    /// `Pending` but none can be promoted.
     pub fn check_deadlock<I>(graph: &WorkflowGraph<I>) -> Result<(), WorkflowError>
     where
         I: Send + Sync + std::fmt::Debug + 'static,
@@ -79,7 +57,6 @@ impl WorkflowScheduler {
             return Ok(());
         }
 
-        // Peek at the first ready node without collecting.
         if graph.ready_nodes().next().is_some() {
             return Ok(());
         }
@@ -93,9 +70,6 @@ impl WorkflowScheduler {
         Err(WorkflowError::SchedulerDeadlock { pending })
     }
 
-    /// Summary counts for the current graph state.
-    ///
-    /// Returns `(pending, ready, running, completed, failed, skipped, cancelled)`.
     pub fn counts<I>(graph: &WorkflowGraph<I>) -> (usize, usize, usize, usize, usize, usize, usize)
     where
         I: Send + Sync + std::fmt::Debug + 'static,

@@ -30,9 +30,6 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-// ── Macro to stamp out ID types ───────────────────────────────────────────────
-
-/// Internal macro to generate a typed ID newtype.
 macro_rules! define_id {
     (
         $(#[$meta:meta])*
@@ -48,19 +45,16 @@ macro_rules! define_id {
         pub struct $name(Uuid);
 
         impl $name {
-            /// Generate a new random ID.
             #[inline]
             pub fn new() -> Self {
                 Self(Uuid::new_v4())
             }
 
-            /// Create an ID from an existing [`Uuid`].
             #[inline]
             pub fn from_uuid(uuid: Uuid) -> Self {
                 Self(uuid)
             }
 
-            /// Access the inner [`Uuid`].
             #[inline]
             pub fn as_uuid(&self) -> Uuid {
                 self.0
@@ -93,51 +87,9 @@ macro_rules! define_id {
     };
 }
 
-// ── ID types ──────────────────────────────────────────────────────────────────
-
-define_id!(
-    /// Identifies a unique workflow *definition* or *template*.
-    ///
-    /// Two runs of the same workflow definition share the same `WorkflowId`
-    /// in a registry; each run gets its own [`ExecutionId`].
-    WorkflowId
-);
-
-define_id!(
-    /// Identifies a single execution (run instance) of a workflow.
-    ///
-    /// Created fresh for every call to `WorkflowEngine::run`.
-    ExecutionId
-);
-
-define_id!(
-    /// Identifies a node in a workflow execution graph.
-    ///
-    /// In the current implementation this is derived from the skill's static
-    /// `&'static str` ID and a content hash; in the typed-ID world we generate
-    /// one per node instantiation.
-    NodeId
-);
-
-define_id!(
-    /// Identifies a registered skill.
-    ///
-    /// Stable across restarts; used to look skills up in the registry.
-    SkillId
-);
-
-define_id!(
-    /// Identifies a registered plugin.
-    ///
-    /// Plugins are discovered at startup; each installed plugin has a unique
-    /// `PluginId` assigned by the bootstrap layer.
-    PluginId
-);
-
-define_id!(
-    /// Identifies a workflow artifact.
-    ///
-    /// Artifacts are created by skills and stored in the context or emitted
-    /// to external storage.  Each artifact instance has a unique `ArtifactId`.
-    ArtifactId
-);
+define_id!(WorkflowId);
+define_id!(ExecutionId);
+define_id!(NodeId);
+define_id!(SkillId);
+define_id!(PluginId);
+define_id!(ArtifactId);
