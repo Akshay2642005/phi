@@ -2,19 +2,11 @@
 // until domain workflows are registered. Suppress the noise.
 #![allow(dead_code, unused_imports)]
 
-mod api;
-mod bootstrap;
-mod core;
-mod runtime;
-mod setup;
-mod tools;
-
-use crate::{
-    bootstrap::container::AppContainer,
-    runtime::{RuntimeInput, plugin::RuntimePlugin},
-};
-use dotenvy::dotenv;
 use std::sync::Arc;
+
+use dotenvy::dotenv;
+
+use rust_agent::bootstrap::container::AppContainer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
