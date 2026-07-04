@@ -6,79 +6,30 @@
 //!
 //! # Design
 //! - One node per skill registration.
-//! - Nodes are identified by [`NodeId`] (the skill's `id` string borrowed
-//!   as a `&'static str`) so the graph can use them as cheap edge keys.
-//! - [`NodeState`] is the execution lifecycle; the scheduler drives
-//!   transitions.
+//! - Nodes carry both a typed [`NodeId`] (UUID instance ID) and a
+//!   `&'static str` skill identifier for dependency lookups.
+//! - [`NodeState`] (from [`crate::core::workflow::state`]) drives the
+//!   execution lifecycle; the scheduler owns transitions.
 
 use std::sync::Arc;
 
-use crate::core::skill::{Skill, SkillDefinition, SkillRef};
+use crate::core::{
+    ids::NodeId as TypedNodeId,
+    skill::{Skill, SkillDefinition, SkillRef},
+};
+
+pub use crate::core::workflow::state::NodeState;
 
 // ── Node identifier ───────────────────────────────────────────────────────────
 
-/// The unique identifier for a node in the workflow graph.
+/// The unique identifier for a node in the workflow graph, used as a key
+/// for dependency lookups and slot-map indexing.
 ///
-/// We reuse the skill's `id` so that dependency declarations (`&["dep_id"]`)
-/// are directly usable as node indices without a separate translation step.
+/// Currently aliased to `&'static str` (the skill's static ID) so that
+/// dependency declarations are directly usable.  The typed [`TypedNodeId`]
+/// (UUID) is available via [`WorkflowNode::instance_id`] and will become
+/// the primary identifier in a future release.
 pub type NodeId = &'static str;
-
-// ── Node state ────────────────────────────────────────────────────────────────
-
-/// Execution lifecycle state of a [`WorkflowNode`].
-///
-/// The scheduler drives the transition:
-/// ```text
-/// Pending → Ready → Running → Completed
-///                           ↘ Failed
-///                           ↘ Skipped
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NodeState {
-    /// Waiting for one or more dependencies to complete.
-    Pending,
-    /// All dependencies have completed; ready to be scheduled.
-    Ready,
-    /// Currently executing.
-    Running,
-    /// Execution completed successfully.
-    Completed,
-    /// Execution failed.
-    ///
-    /// `reason` is a human-readable message for logs/diagnostics.
-    Failed { reason: String },
-    /// Skipped (e.g., conditional execution or a preceding node failed
-    /// under a `continue_on_failure` policy).
-    Skipped,
-}
-
-impl NodeState {
-    /// `true` if the node has reached a terminal state.
-    pub fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            NodeState::Completed | NodeState::Failed { .. } | NodeState::Skipped
-        )
-    }
-
-    /// `true` if the node completed successfully.
-    pub fn is_success(&self) -> bool {
-        matches!(self, NodeState::Completed)
-    }
-}
-
-impl std::fmt::Display for NodeState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NodeState::Pending => write!(f, "Pending"),
-            NodeState::Ready => write!(f, "Ready"),
-            NodeState::Running => write!(f, "Running"),
-            NodeState::Completed => write!(f, "Completed"),
-            NodeState::Failed { reason } => write!(f, "Failed({})", reason),
-            NodeState::Skipped => write!(f, "Skipped"),
-        }
-    }
-}
 
 // ── Workflow node ─────────────────────────────────────────────────────────────
 
@@ -94,6 +45,18 @@ where
 
     /// Current execution state (driven by the scheduler).
     pub state: NodeState,
+
+    /// Unique UUID-based instance identifier for this node.
+    ///
+    /// Every node in the graph gets a fresh [`TypedNodeId`] at creation.
+    /// This is currently unused by the scheduler/executor but exists so that
+    /// future features (multi-instance skills, checkpointing, distributed
+    /// execution) can distinguish node *instances* from skill *definitions*.
+    instance_id: TypedNodeId,
+
+    /// The skill's static string identifier (for dependency lookups and
+    /// backward compatibility).
+    skill_id: &'static str,
 }
 
 impl<I> WorkflowNode<I>
@@ -102,29 +65,44 @@ where
 {
     /// Wrap a skill in a new node starting in the [`NodeState::Pending`] state.
     pub fn new(skill: Arc<dyn Skill<I>>) -> Self {
+        let skill_id = skill.definition().id;
         Self {
             skill,
             state: NodeState::Pending,
+            instance_id: TypedNodeId::new(),
+            skill_id,
         }
     }
 
-    /// Convenience accessor for the node's `id` (= `definition().id`).
+    /// Instance UUID — unique across all nodes in all runs.
+    ///
+    /// Use this when you need a globally unique identity for this node
+    /// instance.  For dependency/slot-map lookups, use [`Self::id`] instead.
+    #[inline]
+    pub fn instance_id(&self) -> TypedNodeId {
+        self.instance_id
+    }
+
+    /// Return the node's string identifier (= the skill's static `id`).
+    #[inline]
     pub fn id(&self) -> NodeId {
-        self.skill.definition().id
+        self.skill_id
     }
 
     /// Convenience accessor for the node's [`SkillDefinition`].
+    #[inline]
     pub fn definition(&self) -> &'static SkillDefinition {
         self.skill.definition()
     }
 
     /// Transition the node to a new state.
     ///
-    /// In debug builds this panics on invalid transitions (e.g., going
-    /// backwards from `Completed` to `Pending`).
+    /// Logs a `DEBUG` trace for every transition.  In a future version this
+    /// will also emit a [`crate::core::events::EngineEvent`].
     pub fn transition(&mut self, new_state: NodeState) {
         tracing::debug!(
-            node_id = self.id(),
+            instance_id = %self.instance_id,
+            skill_id = self.skill_id,
             from = %self.state,
             to = %new_state,
             "Node state transition"
@@ -140,6 +118,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WorkflowNode")
             .field("id", &self.id())
+            .field("instance_id", &self.instance_id)
             .field("state", &self.state)
             .finish()
     }

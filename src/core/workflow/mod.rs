@@ -3,7 +3,8 @@
 //! # Module layout
 //! | Module | Responsibility |
 //! |--------|---------------|
-//! | [`node`] | `WorkflowNode`, `NodeState`, `NodeId` |
+//! | [`state`] | `WorkflowState`, `NodeState` enums |
+//! | [`node`] | `WorkflowNode`, `NodeId` |
 //! | [`graph`] | `WorkflowGraph` — petgraph-backed DAG |
 //! | [`dependency`] | `DependencyResolver` — validates + builds the DAG |
 //! | [`planner`] | `WorkflowPlanner` + `ExecutionPlan` |
@@ -11,7 +12,7 @@
 //! | [`execution`] | `WorkflowExecutor` — runs individual skills |
 //! | [`engine`] | `WorkflowEngine` — top-level orchestrator |
 //! | [`policy`] | `RetryPolicy`, `TimeoutPolicy` stubs |
-//! | [`events`] | `WorkflowEvent`, `WorkflowEventSink` stubs |
+//! | [`events`] | `EngineEvent`, `WorkflowEventSink` stubs |
 
 pub mod dependency;
 pub mod engine;
@@ -22,14 +23,16 @@ pub mod node;
 pub mod planner;
 pub mod policy;
 pub mod scheduler;
+pub mod state;
 
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
 pub use engine::{WorkflowEngine, WorkflowResult};
-pub use events::{NoopEventSink, TracingEventSink, WorkflowEvent, WorkflowEventSink};
+pub use events::{NoopEventSink, TracingEventSink, WorkflowEventSink};
 pub use execution::WorkflowExecutor;
 pub use graph::WorkflowGraph;
 pub use node::{NodeId, NodeState, WorkflowNode};
 pub use planner::{ExecutionPlan, WorkflowPlanner};
 pub use policy::{RetryPolicy, TimeoutPolicy};
 pub use scheduler::WorkflowScheduler;
+pub use state::WorkflowState;

@@ -55,7 +55,7 @@ impl Skill<TextAnalysisInput> for WordCountSkill {
 
         // Sentence count: split on '.', '!', '?' — filter empties
         let sentence_count = text
-            .split(|c| matches!(c, '.' | '!' | '?'))
+            .split(['.', '!', '?'])
             .filter(|s| !s.trim().is_empty())
             .count()
             .max(1); // at least 1 sentence

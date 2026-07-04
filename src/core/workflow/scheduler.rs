@@ -19,7 +19,7 @@
 
 use crate::core::{
     errors::WorkflowError,
-    workflow::{graph::WorkflowGraph, node::NodeState},
+    workflow::{graph::WorkflowGraph, state::NodeState},
 };
 
 // ── Scheduler ─────────────────────────────────────────────────────────────────
@@ -95,13 +95,13 @@ impl WorkflowScheduler {
 
     /// Summary counts for the current graph state.
     ///
-    /// Returns `(pending, ready, running, completed, failed, skipped)`.
-    pub fn counts<I>(graph: &WorkflowGraph<I>) -> (usize, usize, usize, usize, usize, usize)
+    /// Returns `(pending, ready, running, completed, failed, skipped, cancelled)`.
+    pub fn counts<I>(graph: &WorkflowGraph<I>) -> (usize, usize, usize, usize, usize, usize, usize)
     where
         I: Send + Sync + std::fmt::Debug + 'static,
     {
-        let (mut pending, mut ready, mut running, mut completed, mut failed, mut skipped) =
-            (0, 0, 0, 0, 0, 0);
+        let (mut pending, mut ready, mut running, mut completed, mut failed, mut skipped, mut cancelled) =
+            (0, 0, 0, 0, 0, 0, 0);
 
         for idx in graph.node_indices() {
             match &graph.node(idx).state {
@@ -111,9 +111,21 @@ impl WorkflowScheduler {
                 NodeState::Completed => completed += 1,
                 NodeState::Failed { .. } => failed += 1,
                 NodeState::Skipped => skipped += 1,
+                NodeState::Cancelled => cancelled += 1,
             }
         }
 
-        (pending, ready, running, completed, failed, skipped)
+        tracing::debug!(
+            pending,
+            ready,
+            running,
+            completed,
+            failed,
+            skipped,
+            cancelled,
+            "Scheduler node counts"
+        );
+
+        (pending, ready, running, completed, failed, skipped, cancelled)
     }
 }

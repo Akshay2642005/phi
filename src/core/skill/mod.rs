@@ -14,7 +14,10 @@ use std::{
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 
-use crate::core::context::WorkflowContext;
+use crate::core::{
+    capability::Capability,
+    context::WorkflowContext,
+};
 
 // ── SkillDefinition ───────────────────────────────────────────────────────────
 
@@ -70,6 +73,12 @@ pub struct SkillDefinition {
 ///   practical (so it can be safely retried on transient failures).
 /// - `execute()` must write its primary output to `ctx.slots` under
 ///   `definition().id` before returning `Ok(())`.
+///
+/// # Capabilities
+/// Skills may override [`required_capabilities`] and [`provided_capabilities`]
+/// to declare what the runtime environment must provide vs. what they
+/// contribute.  The default implementations return empty slices, making
+/// capability declarations opt-in.
 #[async_trait]
 pub trait Skill<I>: Send + Sync
 where
@@ -89,6 +98,26 @@ where
     /// Returning `Err` causes the engine to record the skill as failed and,
     /// depending on the retry policy, either retry or abort the workflow.
     async fn execute(&self, ctx: &mut WorkflowContext<I>) -> Result<()>;
+
+    /// Capabilities this skill **requires** to function correctly.
+    ///
+    /// The engine checks that all required capabilities are present in the
+    /// runtime environment before scheduling this skill.
+    ///
+    /// Default: empty (no special requirements).
+    fn required_capabilities(&self) -> &[Capability] {
+        &[]
+    }
+
+    /// Capabilities this skill **provides** to the runtime.
+    ///
+    /// For example, a skill that wraps an LLM call may declare
+    /// `[Capability::Llm]` here.
+    ///
+    /// Default: empty (no provisions).
+    fn provided_capabilities(&self) -> &[Capability] {
+        &[]
+    }
 }
 
 /// A cheaply-cloneable reference to any `Skill<I>` implementation.

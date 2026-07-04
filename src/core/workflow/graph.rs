@@ -22,7 +22,10 @@ use petgraph::visit::EdgeRef;
 
 use crate::core::{
     skill::SkillRef,
-    workflow::node::{NodeId, NodeState, WorkflowNode},
+    workflow::{
+        node::{NodeId, WorkflowNode},
+        state::NodeState,
+    },
 };
 
 // ── Graph ─────────────────────────────────────────────────────────────────────
@@ -153,6 +156,11 @@ where
     /// Returns the number of nodes in the graph.
     pub fn node_count(&self) -> usize {
         self.graph.node_count()
+    }
+
+    /// Returns the number of dependency edges in the graph.
+    pub fn edge_count(&self) -> usize {
+        self.graph.edge_count()
     }
 
     /// Returns an iterator over all node indices.

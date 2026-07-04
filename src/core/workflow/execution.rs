@@ -26,8 +26,8 @@ use crate::core::{
     skill::SkillRef,
     workflow::{
         graph::WorkflowGraph,
-        node::NodeState,
         policy::RetryPolicy,
+        state::NodeState,
     },
 };
 
@@ -85,11 +85,23 @@ impl WorkflowExecutor {
         I: Send + Sync + std::fmt::Debug + 'static,
     {
         let def = skill.definition();
+        let skill_id = def.id;
+        let execution_id = ctx.execution_id;
+
+        tracing::trace!(
+            execution_id = %execution_id,
+            skill_id = skill_id,
+            "Executor: execute_node called"
+        );
 
         // ── Cancellation check ────────────────────────────────────────────────
         if ctx.is_cancelled() {
             graph.transition(def.id, NodeState::Skipped);
-            tracing::info!(skill_id = def.id, "Skill skipped — workflow cancelled");
+            tracing::info!(
+                execution_id = %execution_id,
+                skill_id = skill_id,
+                "Skill skipped — workflow cancelled"
+            );
             return Err(WorkflowError::Cancelled);
         }
 
@@ -97,14 +109,19 @@ impl WorkflowExecutor {
         graph.transition(def.id, NodeState::Running);
 
         tracing::info!(
-            skill_id = def.id,
+            execution_id = %execution_id,
+            skill_id = skill_id,
             skill_name = def.name,
             skill_version = def.version,
+            timeout_ms = self.timeout.map(|d| d.as_millis() as u64),
+            max_attempts = self.retry_policy.max_attempts,
             "Executing skill"
         );
 
         // ── Execute (with optional timeout) ───────────────────────────────────
+        let start = std::time::Instant::now();
         let result = self.run_with_policy(skill, ctx).await;
+        let elapsed_ms = start.elapsed().as_millis() as u64;
 
         // ── Record outcome ────────────────────────────────────────────────────
         match result {
@@ -113,8 +130,9 @@ impl WorkflowExecutor {
                 ctx.mark_completed(def.id);
 
                 tracing::info!(
-                    skill_id = def.id,
-                    elapsed_ms = ctx.elapsed().as_millis() as u64,
+                    execution_id = %execution_id,
+                    skill_id = skill_id,
+                    elapsed_ms,
                     "Skill completed successfully"
                 );
 
@@ -127,7 +145,9 @@ impl WorkflowExecutor {
                 ctx.error(def.id, format!("Skill failed: {}", reason));
 
                 tracing::error!(
-                    skill_id = def.id,
+                    execution_id = %execution_id,
+                    skill_id = skill_id,
+                    elapsed_ms,
                     error = %e,
                     "Skill execution failed"
                 );
@@ -157,20 +177,54 @@ impl WorkflowExecutor {
         I: Send + Sync + std::fmt::Debug + 'static,
     {
         let max_attempts = self.retry_policy.max_attempts.max(1);
+        let skill_id = skill.definition().id;
 
         for attempt in 1..=max_attempts {
+            let start = std::time::Instant::now();
+
             match skill.execute(ctx).await {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    let elapsed_ms = start.elapsed().as_millis() as u64;
+                    tracing::debug!(
+                        skill_id = skill_id,
+                        attempt,
+                        elapsed_ms,
+                        "Skill execution attempt succeeded"
+                    );
+                    return Ok(());
+                }
                 Err(e) => {
+                    let elapsed_ms = start.elapsed().as_millis() as u64;
+
                     if attempt < max_attempts {
+                        let backoff_ms = self
+                            .retry_policy
+                            .backoff
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+
                         tracing::warn!(
-                            skill_id = skill.definition().id,
+                            skill_id = skill_id,
                             attempt,
                             max_attempts,
+                            elapsed_ms,
+                            backoff_ms,
                             error = %e,
                             "Skill failed; retrying"
                         );
+
+                        if backoff_ms > 0 {
+                            tokio::time::sleep(self.retry_policy.backoff.unwrap()).await;
+                        }
                     } else {
+                        tracing::error!(
+                            skill_id = skill_id,
+                            attempt,
+                            max_attempts,
+                            elapsed_ms,
+                            error = %e,
+                            "Skill failed; all attempts exhausted"
+                        );
                         return Err(e);
                     }
                 }

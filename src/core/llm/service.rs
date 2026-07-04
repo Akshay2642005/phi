@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use rig::{client::CompletionClient, completion::Prompt};
 use serde::de::DeserializeOwned;
 
-use crate::{core::errors::SkillError, setup::rig::RigRuntime};
+use crate::core::errors::SkillError;
 
 // ── Public type alias ─────────────────────────────────────────────────────────
 
@@ -92,20 +92,24 @@ impl<T: LlmService + ?Sized> LlmServiceExt for T {}
 
 /// Ollama-backed [`LlmService`] implementation using the `rig` crate.
 pub struct OllamaLlmService {
-    runtime: Arc<RigRuntime>,
+    client: rig::providers::ollama::Client,
+    model: String,
 }
 
 impl OllamaLlmService {
-    /// Create a new `OllamaLlmService` wrapping the given runtime.
-    pub fn new(runtime: Arc<RigRuntime>) -> Self {
-        Self { runtime }
+    /// Create a new `OllamaLlmService` from an Ollama client and model name.
+    pub fn new(client: rig::providers::ollama::Client, model: impl Into<String>) -> Self {
+        Self {
+            client,
+            model: model.into(),
+        }
     }
 }
 
 #[async_trait]
 impl LlmService for OllamaLlmService {
     async fn prompt(&self, prompt: &str) -> Result<String> {
-        let agent = self.runtime.client.agent(&self.runtime.model).build();
+        let agent = self.client.agent(&self.model).build();
         Ok(agent.prompt(prompt).await?)
     }
 }

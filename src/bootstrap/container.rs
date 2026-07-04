@@ -7,6 +7,8 @@
 
 use std::sync::Arc;
 
+use rig::providers::ollama;
+
 use crate::{
     core::llm::{LlmServiceRef, OllamaLlmService},
     setup::{config::AppConfig, rig::RigRuntime},
@@ -31,7 +33,15 @@ impl AppContainer {
             config.ollama_model.clone(),
         )?);
 
-        let llm: LlmServiceRef = Arc::new(OllamaLlmService::new(runtime.clone()));
+        let client = ollama::Client::builder()
+            .api_key(config.ollama_api_key.clone())
+            .base_url(config.ollama_base_url.clone())
+            .build()?;
+
+        let llm: LlmServiceRef = Arc::new(OllamaLlmService::new(
+            client,
+            config.ollama_model.clone(),
+        ));
 
         Ok(Self {
             config: Arc::new(config),
