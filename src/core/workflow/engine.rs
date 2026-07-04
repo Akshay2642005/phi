@@ -43,20 +43,15 @@ use crate::core::{
         bus::EventBus,
         event_types::{
             EngineEvent, ExecutionPlanBuiltEvent, SkillCompletedEvent, SkillFailedEvent,
-            SkillStartedEvent, WorkflowCompletedEvent, WorkflowFailedEvent,
-            WorkflowStartedEvent,
+            SkillStartedEvent, WorkflowCompletedEvent, WorkflowFailedEvent, WorkflowStartedEvent,
         },
     },
     ids::{ExecutionId, WorkflowId},
     models::execution::{ExecutionSummary, SkillOutcome},
     skill::SkillRegistry,
     workflow::{
-        events::WorkflowEventSink,
-        execution::WorkflowExecutor,
-        graph::WorkflowGraph,
-        node::NodeState,
-        planner::WorkflowPlanner,
-        scheduler::WorkflowScheduler,
+        events::WorkflowEventSink, execution::WorkflowExecutor, graph::WorkflowGraph,
+        node::NodeState, planner::WorkflowPlanner, scheduler::WorkflowScheduler,
         state::WorkflowState,
     },
 };
@@ -264,8 +259,8 @@ where
 
             // (d) Execute all ready nodes.
             for node_id in ready_nodes.iter().copied() {
-                // Resolve the node from the graph.
-                let Some(idx) = graph.node_index(node_id) else {
+                // Resolve the skill from the graph.
+                let Some(skill) = graph.skill(node_id) else {
                     tracing::warn!(
                         execution_id = %execution_id,
                         node_id = %node_id,
@@ -274,7 +269,7 @@ where
                     continue;
                 };
 
-                let skill = graph.node(idx).skill.clone(); // cheap Arc clone
+                let skill = skill.clone(); // cheap Arc clone
 
                 let attempt = 1u32;
 

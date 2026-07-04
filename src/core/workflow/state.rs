@@ -82,9 +82,7 @@ impl WorkflowState {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            WorkflowState::Completed
-                | WorkflowState::Failed
-                | WorkflowState::Cancelled
+            WorkflowState::Completed | WorkflowState::Failed | WorkflowState::Cancelled
         )
     }
 

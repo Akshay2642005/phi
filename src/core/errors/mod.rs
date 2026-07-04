@@ -96,9 +96,7 @@ pub enum WorkflowError {
     ///
     /// This should not happen if cycle detection passes; it is a safety-net
     /// error that indicates an engine bug.
-    #[error(
-        "scheduler deadlock: {pending} node(s) pending but none are ready to execute"
-    )]
+    #[error("scheduler deadlock: {pending} node(s) pending but none are ready to execute")]
     SchedulerDeadlock {
         /// How many nodes are still waiting.
         pending: usize,

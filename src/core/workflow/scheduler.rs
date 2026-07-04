@@ -4,18 +4,22 @@
 //! nodes are ready to execute, which are pending, and which have finished.
 //! It does not execute skills itself — that is the executor's responsibility.
 //!
+//! # What the scheduler does NOT know
+//!
+//! The scheduler does **not** import or reference petgraph types.  It
+//! interacts with the graph exclusively through the public API of
+//! [`WorkflowGraph`]:
+//!
+//! - `graph.ready_nodes()` — discovers nodes whose dependencies are met.
+//! - `graph.transition()` — advances node state.
+//! - `graph.is_complete()`, `graph.running_count()`, etc. — queries.
+//!
 //! # Responsibilities
 //! - Promote `Pending` nodes to `Ready` when all their dependencies have
 //!   completed.
 //! - Track counts of pending / running / completed / failed nodes.
 //! - Detect deadlocks (pending nodes exist but none can become ready).
 //! - Report when the entire workflow is done.
-//!
-//! # Current implementation
-//! The current implementation is single-threaded (designed for the sequential
-//! executor).  Because all state is held in the `WorkflowGraph`, upgrading to
-//! a parallel executor only requires calling `tick` from multiple threads and
-//! letting the graph's `DashMap`-backed node state handle concurrency.
 
 use crate::core::{
     errors::WorkflowError,
@@ -42,23 +46,21 @@ impl WorkflowScheduler {
     where
         I: Send + Sync + std::fmt::Debug + 'static,
     {
-        let ready_indices = graph.pending_ready_nodes();
-        let mut promoted = Vec::with_capacity(ready_indices.len());
+        // Collect first to avoid borrow conflicts with graph.transition().
+        let ready: Vec<&'static str> = graph.ready_nodes().collect();
 
-        for idx in ready_indices {
-            let node = graph.node_mut(idx);
-            node.transition(NodeState::Ready);
-            promoted.push(node.id());
+        for &id in &ready {
+            graph.transition(id, NodeState::Ready);
         }
 
-        if !promoted.is_empty() {
+        if !ready.is_empty() {
             tracing::debug!(
-                promoted = ?promoted,
+                promoted = ?ready,
                 "Scheduler promoted nodes to Ready"
             );
         }
 
-        promoted
+        ready
     }
 
     /// Validate that the workflow can make forward progress.
@@ -77,18 +79,16 @@ impl WorkflowScheduler {
             return Ok(());
         }
 
-        let has_ready = !graph.ready_nodes().is_empty();
-        let has_running = !graph.running_node_ids().is_empty();
-
-        if has_ready || has_running {
+        // Peek at the first ready node without collecting.
+        if graph.ready_nodes().next().is_some() {
             return Ok(());
         }
 
-        // Count how many non-terminal nodes remain.
-        let pending = graph
-            .node_indices()
-            .filter(|&idx| !graph.node(idx).state.is_terminal())
-            .count();
+        if graph.running_count() > 0 {
+            return Ok(());
+        }
+
+        let pending = graph.non_terminal_count();
 
         Err(WorkflowError::SchedulerDeadlock { pending })
     }
@@ -100,11 +100,18 @@ impl WorkflowScheduler {
     where
         I: Send + Sync + std::fmt::Debug + 'static,
     {
-        let (mut pending, mut ready, mut running, mut completed, mut failed, mut skipped, mut cancelled) =
-            (0, 0, 0, 0, 0, 0, 0);
+        let (
+            mut pending,
+            mut ready,
+            mut running,
+            mut completed,
+            mut failed,
+            mut skipped,
+            mut cancelled,
+        ) = (0, 0, 0, 0, 0, 0, 0);
 
-        for idx in graph.node_indices() {
-            match &graph.node(idx).state {
+        for node in graph.iter() {
+            match node.state() {
                 NodeState::Pending => pending += 1,
                 NodeState::Ready => ready += 1,
                 NodeState::Running => running += 1,
@@ -126,6 +133,8 @@ impl WorkflowScheduler {
             "Scheduler node counts"
         );
 
-        (pending, ready, running, completed, failed, skipped, cancelled)
+        (
+            pending, ready, running, completed, failed, skipped, cancelled,
+        )
     }
 }

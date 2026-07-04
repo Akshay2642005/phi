@@ -18,11 +18,11 @@ use crate::core::{
     plugin::{Plugin, PluginContext, PluginMetadata},
     skill::SkillDefinition,
 };
-use crate::tools::web_search::WebSearchSkill;
 use crate::runtime::{
     RuntimeInput,
     planner::{PlannerSkill, SkillSummary},
 };
+use crate::tools::web_search::WebSearchSkill;
 
 // ── Metadata ──────────────────────────────────────────────────────────────────
 

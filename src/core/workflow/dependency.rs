@@ -5,16 +5,16 @@
 //!
 //! 1. **Existence check** — every ID listed in `dependencies` must be
 //!    registered.
-//! 2. **Graph construction** — one petgraph node per skill, one petgraph
-//!    edge per dependency.
-//! 3. **Cycle detection** — if `petgraph::algo::is_cyclic_directed` finds a
-//!    cycle, we walk the graph to name the offending skill and return a typed
-//!    [`WorkflowError::DependencyCycle`].
+//! 2. **Graph construction** — one node per skill, one edge per dependency.
+//! 3. **Cycle detection** — delegates to [`WorkflowGraph::detect_cycle`].
 //!
 //! On success the resolver returns a [`WorkflowGraph`] ready for the planner
 //! and scheduler.
-
-use petgraph::algo::is_cyclic_directed;
+//!
+//! # petgraph containment
+//!
+//! This module does **not** import petgraph.  All graph manipulation goes
+//! through the [`WorkflowGraph`] API, which encapsulates petgraph internals.
 
 use crate::core::{errors::WorkflowError, skill::SkillRegistry, workflow::graph::WorkflowGraph};
 
@@ -75,38 +75,8 @@ impl DependencyResolver {
         }
 
         // ── Pass 3: cycle detection ───────────────────────────────────────────
-        // Build a temporary petgraph::DiGraph<&str, ()> mirroring the structure
-        // so we can call petgraph::algo::is_cyclic_directed.
-        {
-            // We'll check using petgraph directly on our graph via the public
-            // petgraph type.  Build a lightweight check graph.
-            use petgraph::graph::DiGraph;
-
-            let mut check: DiGraph<&str, ()> = DiGraph::new();
-            let mut check_map: std::collections::HashMap<&str, petgraph::graph::NodeIndex> =
-                std::collections::HashMap::new();
-
-            for id in &ids {
-                let idx = check.add_node(id);
-                check_map.insert(id, idx);
-            }
-
-            for id in &ids {
-                let skill = registry.skills()[*id].clone();
-                let def = skill.definition();
-                for dep_id in def.dependencies {
-                    check.add_edge(check_map[dep_id], check_map[id as &str], ());
-                }
-            }
-
-            if is_cyclic_directed(&check) {
-                // Find the offending node using DFS-based cycle finding.
-                let offender = {
-                    let this = find_cycle_node(&check);
-                    this.unwrap_or("unknown")
-                };
-                return Err(WorkflowError::DependencyCycle(offender.to_string()));
-            }
+        if let Some(offender) = graph.detect_cycle() {
+            return Err(WorkflowError::DependencyCycle(offender.to_string()));
         }
 
         tracing::info!(
@@ -115,16 +85,5 @@ impl DependencyResolver {
         );
 
         Ok(graph)
-    }
-}
-
-// ── Cycle node finder ─────────────────────────────────────────────────────────
-
-/// Walk the graph with DFS and return the ID of a node involved in a cycle.
-fn find_cycle_node<'a>(graph: &petgraph::graph::DiGraph<&'a str, ()>) -> Option<&'a str> {
-    // petgraph's toposort returns Err(Cycle { node_id }) on cycles.
-    match petgraph::algo::toposort(graph, None) {
-        Ok(_) => None,
-        Err(cycle) => Some(graph[cycle.node_id()]),
     }
 }

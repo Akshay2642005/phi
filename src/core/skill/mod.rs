@@ -14,10 +14,7 @@ use std::{
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 
-use crate::core::{
-    capability::Capability,
-    context::WorkflowContext,
-};
+use crate::core::{capability::Capability, context::WorkflowContext};
 
 // ── SkillDefinition ───────────────────────────────────────────────────────────
 

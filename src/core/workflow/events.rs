@@ -11,9 +11,8 @@
 //! `WorkflowEngine::with_event_bus`.
 
 pub use crate::core::events::{
-    EngineEvent, ExecutionPlanBuiltEvent, SkillCompletedEvent, SkillFailedEvent,
-    SkillStartedEvent, WorkflowCancelledEvent, WorkflowCompletedEvent, WorkflowFailedEvent,
-    WorkflowStartedEvent,
+    EngineEvent, ExecutionPlanBuiltEvent, SkillCompletedEvent, SkillFailedEvent, SkillStartedEvent,
+    WorkflowCancelledEvent, WorkflowCompletedEvent, WorkflowFailedEvent, WorkflowStartedEvent,
 };
 
 // ── Legacy sink (kept for backwards compatibility) ────────────────────────────

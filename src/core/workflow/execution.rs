@@ -24,11 +24,7 @@ use crate::core::{
     context::WorkflowContext,
     errors::{SkillError, WorkflowError},
     skill::SkillRef,
-    workflow::{
-        graph::WorkflowGraph,
-        policy::RetryPolicy,
-        state::NodeState,
-    },
+    workflow::{graph::WorkflowGraph, policy::RetryPolicy, state::NodeState},
 };
 
 // ── Executor ──────────────────────────────────────────────────────────────────
@@ -140,7 +136,12 @@ impl WorkflowExecutor {
             }
             Err(e) => {
                 let reason = e.to_string();
-                graph.transition(def.id, NodeState::Failed { reason: reason.clone() });
+                graph.transition(
+                    def.id,
+                    NodeState::Failed {
+                        reason: reason.clone(),
+                    },
+                );
                 ctx.mark_failed(def.id);
                 ctx.error(def.id, format!("Skill failed: {}", reason));
 

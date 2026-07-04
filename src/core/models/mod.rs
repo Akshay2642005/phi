@@ -13,8 +13,8 @@
 //! | [`DiagnosticLevel`] | Severity of a diagnostic |
 //! | [`LifecycleTimestamps`] | Timestamps for workflow lifecycle transitions |
 
-pub mod execution;
 pub mod diagnostics;
+pub mod execution;
 
 pub use diagnostics::{DiagnosticLevel, WorkflowDiagnostic};
 pub use execution::{ExecutionMetadata, ExecutionSummary, LifecycleTimestamps, SkillOutcome};

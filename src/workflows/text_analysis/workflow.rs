@@ -32,10 +32,7 @@
 use std::sync::Arc;
 
 use crate::core::{
-    context::WorkflowContext,
-    errors::WorkflowError,
-    plugin::Plugin,
-    skill::SkillRegistry,
+    context::WorkflowContext, errors::WorkflowError, plugin::Plugin, skill::SkillRegistry,
     workflow::WorkflowEngine,
 };
 
@@ -88,10 +85,7 @@ impl TextAnalysisWorkflow {
     ///
     /// Accepts the LLM service so each skill can request completions,
     /// and an optional config for tuning behaviour.
-    pub fn new(
-        llm: crate::core::llm::LlmServiceRef,
-        _config: Option<TextAnalysisConfig>,
-    ) -> Self {
+    pub fn new(llm: crate::core::llm::LlmServiceRef, _config: Option<TextAnalysisConfig>) -> Self {
         Self {
             plugin: TextAnalysisPlugin::new(llm),
             engine: WorkflowEngine::new(),
@@ -129,9 +123,7 @@ impl TextAnalysisWorkflow {
         // Return the output of the first skill for convenience.
         ctx.get::<super::skills::word_count::WordCountOutput>("word_count")
             .map(|arc| (*arc).clone())
-            .ok_or_else(|| {
-                WorkflowError::ContextError("word_count output not found".to_string())
-            })
+            .ok_or_else(|| WorkflowError::ContextError("word_count output not found".to_string()))
     }
 
     /// Return metadata about this workflow.

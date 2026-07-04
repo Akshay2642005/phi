@@ -163,10 +163,7 @@ where
         ));
     }
     if !ctx.failed_skills.is_empty() {
-        lines.push(format!(
-            "Failed skills: {}",
-            ctx.failed_skills.join(", ")
-        ));
+        lines.push(format!("Failed skills: {}", ctx.failed_skills.join(", ")));
     }
 
     for d in ctx.diagnostics.iter().take(10) {

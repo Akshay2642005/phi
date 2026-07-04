@@ -178,7 +178,10 @@ impl ExecutionTracker {
 
     /// `true` if any skills completed.
     fn has_completed(&self) -> bool {
-        self.completed.lock().map(|g| !g.is_empty()).unwrap_or(false)
+        self.completed
+            .lock()
+            .map(|g| !g.is_empty())
+            .unwrap_or(false)
     }
 }
 

@@ -151,11 +151,17 @@ impl SkillOutcome {
     }
 
     /// Construct a failed outcome.
-    pub fn failure(skill_id: impl Into<String>, elapsed_ms: u64, reason: impl Into<String>) -> Self {
+    pub fn failure(
+        skill_id: impl Into<String>,
+        elapsed_ms: u64,
+        reason: impl Into<String>,
+    ) -> Self {
         let reason = reason.into();
         Self {
             skill_id: skill_id.into(),
-            state: NodeState::Failed { reason: reason.clone() },
+            state: NodeState::Failed {
+                reason: reason.clone(),
+            },
             elapsed_ms,
             error: Some(reason),
         }

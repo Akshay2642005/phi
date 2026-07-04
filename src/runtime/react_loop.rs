@@ -27,12 +27,12 @@ use anyhow::{Result, anyhow};
 use crate::core::{
     context::WorkflowContext,
     plugin::{Plugin, PluginContext},
-    skill::{SkillRegistry, SkillRef},
+    skill::{SkillRef, SkillRegistry},
     workflow::WorkflowEngine,
 };
 use crate::runtime::{
     RuntimeInput,
-    planner::{PlanOutput, DEFINITION as PLAN_DEF},
+    planner::{DEFINITION as PLAN_DEF, PlanOutput},
     plugin::RuntimePlugin,
 };
 
@@ -78,7 +78,10 @@ pub async fn run_react_loop(
 
     for step in 1..=config.max_steps {
         tracing::info!(step, max = config.max_steps, "ReAct step starting");
-        println!("\n── Step {step}/{} ─────────────────────────────────────", config.max_steps);
+        println!(
+            "\n── Step {step}/{} ─────────────────────────────────────",
+            config.max_steps
+        );
 
         // ── Phase 1: Reason — run the planner only ────────────────────────
         let planner_registry = single_skill_registry(&full_registry, PLAN_DEF.id)?;
@@ -198,7 +201,11 @@ fn observe_web_search(ctx: &WorkflowContext<RuntimeInput>) {
         if !ws.abstract_text.is_empty() {
             println!("\n🔍 Search result ({}):", ws.abstract_source);
             let preview: String = ws.abstract_text.chars().take(300).collect();
-            let suffix = if ws.abstract_text.len() > 300 { "…" } else { "" };
+            let suffix = if ws.abstract_text.len() > 300 {
+                "…"
+            } else {
+                ""
+            };
             println!("   {}{}", preview, suffix);
             println!("   Source: {}", ws.abstract_url);
         } else {

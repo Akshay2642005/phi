@@ -4,7 +4,7 @@
 //! | Module | Responsibility |
 //! |--------|---------------|
 //! | [`state`] | `WorkflowState`, `NodeState` enums |
-//! | [`node`] | `WorkflowNode`, `NodeId` |
+//! | [`node`] | `WorkflowNode`, `NodeId`, `ExecutionState` |
 //! | [`graph`] | `WorkflowGraph` — petgraph-backed DAG |
 //! | [`dependency`] | `DependencyResolver` — validates + builds the DAG |
 //! | [`planner`] | `WorkflowPlanner` + `ExecutionPlan` |
@@ -31,7 +31,7 @@ pub use engine::{WorkflowEngine, WorkflowResult};
 pub use events::{NoopEventSink, TracingEventSink, WorkflowEventSink};
 pub use execution::WorkflowExecutor;
 pub use graph::WorkflowGraph;
-pub use node::{NodeId, NodeState, WorkflowNode};
+pub use node::{ExecutionState, NodeId, NodeState, WorkflowNode};
 pub use planner::{ExecutionPlan, WorkflowPlanner};
 pub use policy::{RetryPolicy, TimeoutPolicy};
 pub use scheduler::WorkflowScheduler;

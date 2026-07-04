@@ -38,10 +38,8 @@ impl AppContainer {
             .base_url(config.ollama_base_url.clone())
             .build()?;
 
-        let llm: LlmServiceRef = Arc::new(OllamaLlmService::new(
-            client,
-            config.ollama_model.clone(),
-        ));
+        let llm: LlmServiceRef =
+            Arc::new(OllamaLlmService::new(client, config.ollama_model.clone()));
 
         Ok(Self {
             config: Arc::new(config),
