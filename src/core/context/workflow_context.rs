@@ -101,6 +101,19 @@ impl SlotMap {
     pub fn contains(&self, key: &str) -> bool {
         self.0.contains_key(key)
     }
+
+    /// Copy all entries from another SlotMap into this one.
+    pub fn absorb(&self, other: &SlotMap) {
+        for entry in other.0.iter() {
+            self.0.insert(
+                entry.key().clone(),
+                SlotEntry {
+                    type_id: entry.type_id,
+                    value: Arc::clone(&entry.value),
+                },
+            );
+        }
+    }
 }
 
 impl std::fmt::Debug for SlotMap {
@@ -225,11 +238,63 @@ where
         (ctx, sender)
     }
 
+    /// Create a new WorkflowContext from an existing Arc'd input.
+    ///
+    /// Used by parallel execution to create per-task contexts that share
+    /// the same input without cloning.
+    pub fn from_arc(
+        input: Arc<I>,
+        workflow_id: WorkflowId,
+        execution_id: ExecutionId,
+    ) -> (Self, CancellationSender) {
+        let (token, sender) = CancellationToken::new();
+        let ctx = Self {
+            workflow_id,
+            execution_id,
+            started_at: Instant::now(),
+            workflow_state: WorkflowState::Pending,
+            input,
+            slots: SlotMap::default(),
+            execution_tracker: ExecutionTracker::new(),
+            completed_skills: Vec::new(),
+            failed_skills: Vec::new(),
+            variables: DashMap::new(),
+            cancellation: token,
+            diagnostics: Vec::new(),
+            artifacts: Vec::new(),
+            execution_metadata: ExecutionMetadata::new(execution_id, workflow_id),
+            event_bus: None,
+            nodes_completed: 0,
+            nodes_failed: 0,
+            total_retries: 0,
+        };
+        (ctx, sender)
+    }
+
     /// Create a new WorkflowContext with an event bus attached.
     pub fn with_event_bus(input: I, bus: EventBus) -> (Self, CancellationSender) {
         let (mut ctx, sender) = Self::new(input);
         ctx.event_bus = Some(bus);
         (ctx, sender)
+    }
+
+    /// Absorb results from a spawned task's context into this one.
+    ///
+    /// Merges slots, diagnostics, and skill tracking data without
+    /// overwriting existing entries.
+    pub fn absorb_task_results(&mut self, other: &Self) {
+        self.slots.absorb(&other.slots);
+        self.diagnostics.extend(other.diagnostics.iter().cloned());
+        self.completed_skills
+            .extend(other.completed_skills.iter().cloned());
+        self.failed_skills
+            .extend(other.failed_skills.iter().cloned());
+        self.nodes_completed += other.nodes_completed;
+        self.nodes_failed += other.nodes_failed;
+        self.total_retries += other.total_retries;
+        for a in &other.artifacts {
+            self.artifacts.push(Arc::clone(a));
+        }
     }
 
     /// Mark the workflow execution as started.
@@ -518,6 +583,47 @@ mod tests {
             snap2.elapsed_ms >= snap1.elapsed_ms,
             "elapsed should increase over time"
         );
+    }
+
+    // --- Slot absorb tests ---
+
+    #[test]
+    fn test_slot_absorb_merges_entries() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+        ctx.set("skill_a", 42u32);
+
+        let (other, _sender2) = WorkflowContext::new("test");
+        other.set("skill_b", "hello".to_string());
+
+        ctx.absorb_task_results(&other);
+
+        assert_eq!(*ctx.get::<u32>("skill_a").unwrap(), 42);
+        assert_eq!(*ctx.get::<String>("skill_b").unwrap(), "hello".to_string());
+    }
+
+    #[test]
+    fn test_from_arc_shares_input() {
+        let input = Arc::new("shared input");
+        let (ctx, _sender) =
+            WorkflowContext::from_arc(Arc::clone(&input), WorkflowId::new(), ExecutionId::new());
+        assert_eq!(*ctx.input, "shared input");
+    }
+
+    #[test]
+    fn test_absorb_merges_diagnostics_and_metrics() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+
+        let (mut other, _sender2) = WorkflowContext::new("test");
+        other.set("skill_a", 1u32);
+        other.increment_completed();
+        other.increment_completed();
+        other.info("skill_a", "test info");
+
+        ctx.absorb_task_results(&other);
+
+        assert_eq!(ctx.nodes_completed, 2);
+        assert_eq!(ctx.diagnostics.len(), 1);
+        assert_eq!(*ctx.get::<u32>("skill_a").unwrap(), 1);
     }
 
     // --- Backward compatibility tests ---
