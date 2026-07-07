@@ -1,0 +1,39 @@
+# e01s10 Cancellation — wire CancellationToken through engine + ctrl+c
+# Step 10 of Phase 1
+
+story_id: e01s10
+title: "Cancellation — wire CancellationToken through engine + ctrl+c"
+bcps: 3
+status: not_started
+
+description: >
+  CancellationToken already exists in WorkflowContext but is not wired through
+  the engine loop. This story: (1) checks cancellation at every loop iteration,
+  (2) cancels all running tokio tasks via CancellationToken, (3) adds
+  tokio::signal::ctrl_c at the main() level so Ctrl+C triggers engine.cancel().
+
+tasks:
+  - id: e01s10-task-01
+    description: "In engine loop, check ctx.is_cancelled() at the top of each iteration and break with Cancelled state"
+    verify: "grep -q 'is_cancelled' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s10-task-02
+    description: "Pass CancellationToken to spawned parallel tasks so they can abort on cancel"
+    verify: "grep -q 'CancellationToken' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s10-task-03
+    description: "Add engine.cancel() method that triggers the CancellationToken"
+    verify: "grep -q 'pub fn cancel' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s10-task-04
+    description: "Wire ctrl+c handling in main.rs: signal handler calls engine.cancel()"
+    verify: "grep -q 'ctrl_c' src/main.rs"
+    status: not_started
+
+  - id: e01s10-task-05
+    description: "Tests: cancel mid-execution, cancelled nodes are marked Cancelled, engine returns Cancelled summary"
+    verify: "cargo test -- cancel 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started

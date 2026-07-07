@@ -1,0 +1,34 @@
+# e01s13 Execution diagnostics — timing, retry count, error capture
+# Step 13 of Phase 1
+
+story_id: e01s13
+title: "Execution diagnostics — timing, retry count, error capture"
+bcps: 3
+status: not_started
+
+description: >
+  Enhance per-node and per-workflow diagnostics tracking. Every node execution
+  should record: start time, end time, duration, final status, retry count,
+  optional panic capture, error messages, warnings, and an outputs snapshot.
+  The WorkflowSummary should aggregate all node diagnostics.
+
+tasks:
+  - id: e01s13-task-01
+    description: "Add NodeDiagnostics struct with start_time, end_time, duration, status, retry_count, error, warnings, output_keys"
+    verify: "grep -q 'NodeDiagnostics' src/core/models/diagnostics.rs"
+    status: not_started
+
+  - id: e01s13-task-02
+    description: "Record diagnostics in WorkflowExecutor after each node execution: capture timing, retries, errors"
+    verify: "grep -q 'diagnostics' src/core/workflow/execution.rs || grep -q 'NodeDiagnostics' src/core/workflow/execution.rs"
+    status: not_started
+
+  - id: e01s13-task-03
+    description: "Aggregate per-node diagnostics into ExecutionSummary.workflow_diagnostics"
+    verify: "grep -q 'workflow_diagnostics' src/core/models/execution.rs"
+    status: not_started
+
+  - id: e01s13-task-04
+    description: "Tests: each node records start/end/duration, retry count appears in diagnostics, error messages captured, warnings recorded"
+    verify: "cargo test -- diagnostic 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started

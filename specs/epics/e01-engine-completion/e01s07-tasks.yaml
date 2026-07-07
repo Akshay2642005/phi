@@ -1,0 +1,44 @@
+# e01s07 WorkflowContext — artifacts, metadata, event bus, metrics
+# Step 7 of Phase 1
+
+story_id: e01s07
+title: "WorkflowContext — artifacts, metadata, event bus, metrics"
+bcps: 5
+status: not_started
+
+description: >
+  Enhance WorkflowContext<I> with ArtifactRef storage (for tracking outputs
+  produced by skills), ExecutionMetadata lifecycle tracking (created_at,
+  started_at, finished_at), embedded EventBus reference, and runtime metrics
+  counters (node count, retry count, timing snapshots).
+
+tasks:
+  - id: e01s07-task-01
+    description: "Add `artifacts: Vec<ArtifactRef>` field to WorkflowContext with add_artifact/list_artifact methods"
+    verify: "grep -q 'pub artifacts:' src/core/context/workflow_context.rs && grep -q 'pub fn add_artifact' src/core/context/workflow_context.rs"
+    status: not_started
+
+  - id: e01s07-task-02
+    description: "Add `execution_metadata: ExecutionMetadata` field synced with LifecycleTimestamps"
+    verify: "grep -q 'execution_metadata' src/core/context/workflow_context.rs && grep -q 'ExecutionMetadata' src/core/context/workflow_context.rs"
+    status: not_started
+
+  - id: e01s07-task-03
+    description: "Add `event_bus: Option<EventBus>` field so skills can emit events through context"
+    verify: "grep -q 'event_bus' src/core/context/workflow_context.rs"
+    status: not_started
+
+  - id: e01s07-task-04
+    description: "Add metrics counters: nodes_completed, nodes_failed, total_retries, elapsed_ms, snapshot() method"
+    verify: "grep -q 'nodes_completed' src/core/context/workflow_context.rs && grep -q 'fn metrics_snapshot' src/core/context/workflow_context.rs"
+    status: not_started
+
+  - id: e01s07-task-05
+    description: "Update WorkflowContext::new() to accept optional EventBus, wire ExecutionMetadata"
+    verify: "grep -q 'event_bus:' src/core/context/workflow_context.rs"
+    status: not_started
+
+  - id: e01s07-task-06
+    description: "Tests: WorkflowContext stores artifacts, tracks metadata lifecycle, metrics increment correctly"
+    verify: "cargo test -- workflow_context 2>&1 | tail -5 | grep -q 'test result: ok'"
+    status: not_started

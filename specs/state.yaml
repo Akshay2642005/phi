@@ -1,0 +1,33 @@
+# Session state — AI Workflow Engine
+# Updated automatically by bigpowers skills. Do not hand-edit runtime keys.
+
+session:
+  active_flow: build_epic # build_epic | fix_bug | plan_epic | null
+  active_epic_id: e01 # Phase 1: Engine Completion
+  active_story_id: e01s07 # Step 7: WorkflowContext
+  step_index: 7
+  mode: team-pr
+
+handoff:
+  next_skill: scope-work
+  notes: "elaborate-spec complete. Phase 1 roadmap: 15 steps (1-6 done, 7-15 planned). Planning context saved to specs/planning-context.yaml. Next: scope-work to define exactly what's in/out of scope for Phase 1 step 7 (WorkflowContext)."
+
+git:
+  branch: master
+  sha: null
+  clean: true
+
+workflow_mode: team-pr
+
+epic_cycle:
+  story_bcps: null
+
+metrics:
+  story_start: null
+  story_end: null
+  cycle_minutes: null
+  bcp_per_hour: null
+
+release:
+  last_tag: null
+  last_publish: null

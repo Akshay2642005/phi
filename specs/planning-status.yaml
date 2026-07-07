@@ -1,0 +1,7 @@
+# Planning status — Discover-phase checklist
+# Used by run-planning to track discover-phase progress.
+
+discover_complete: false
+elaborate_complete: false
+design_complete: false
+plan_ready: false

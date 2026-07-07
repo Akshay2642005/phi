@@ -1,0 +1,42 @@
+# Release plan — AI Workflow Engine
+# Release index with WSJF-ordered epic list.
+
+release:
+  version: "0.1.0"          # Mirror — the real version is determined by
+  bump_hint: minor          # semantic-release at merge time.
+  codename: "engine-core"
+  description: "Phase 1 — Engine Completion (WorkflowContext through Engine Tests)"
+
+epics:
+  - id: e01
+    title: "Phase 1 — Engine Completion"
+    description: "Complete the engine internals: WorkflowContext, execution loop, parallel exec, cancellation, timeouts, retries, diagnostics, observability, and comprehensive tests."
+    bcps: 45
+    stories:
+      - id: e01s07
+        title: "WorkflowContext — artifacts, metadata, event bus, metrics"
+        bcps: 5
+      - id: e01s08
+        title: "Execution loop — initialize → tick → update → finalize"
+        bcps: 5
+      - id: e01s09
+        title: "Parallel execution — tokio::spawn + JoinSet"
+        bcps: 8
+      - id: e01s10
+        title: "Cancellation — wire token + ctrl+c"
+        bcps: 3
+      - id: e01s11
+        title: "Timeout hierarchy — node ≤ workflow ≤ global"
+        bcps: 5
+      - id: e01s12
+        title: "Retry engine — linear, exponential, jitter"
+        bcps: 5
+      - id: e01s13
+        title: "Execution diagnostics — timing, retry count, errors"
+        bcps: 3
+      - id: e01s14
+        title: "Observability — full event emission"
+        bcps: 3
+      - id: e01s15
+        title: "Engine tests — comprehensive integration tests"
+        bcps: 8

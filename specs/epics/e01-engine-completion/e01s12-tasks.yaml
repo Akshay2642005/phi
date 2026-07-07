@@ -1,0 +1,40 @@
+# e01s12 Retry engine — linear, exponential, jitter strategies
+# Step 12 of Phase 1
+
+story_id: e01s12
+title: "Retry engine — linear, exponential, jitter strategies"
+bcps: 5
+status: not_started
+
+description: >
+  Upgrade the current simple fixed-backoff retry policy to a proper retry engine
+  supporting: Linear backoff (base_delay * attempt), Exponential backoff
+  (base_delay * 2^attempt), Jitter (exponential + random fuzz), maximum retries,
+  and retry predicates (decide which errors are retryable). Replace the inline
+  retry loop in WorkflowExecutor::run_with_policy with a RetryStrategy enum.
+
+tasks:
+  - id: e01s12-task-01
+    description: "Create RetryStrategy enum (Linear/Exponential/Jitter) with BackoffConfig struct"
+    verify: "grep -q 'RetryStrategy' src/core/workflow/policy.rs && grep -q 'BackoffConfig' src/core/workflow/policy.rs"
+    status: not_started
+
+  - id: e01s12-task-02
+    description: "Add retry_predicate: Box<dyn Fn(&WorkflowError) -> bool> to decide which errors trigger retry"
+    verify: "grep -q 'retry_predicate' src/core/workflow/policy.rs || grep -q 'fn is_retryable' src/core/workflow/policy.rs"
+    status: not_started
+
+  - id: e01s12-task-03
+    description: "Create RetryEngine struct with execute() method: strategy → backoff → retry loop with max_attempts"
+    verify: "grep -q 'RetryEngine' src/core/workflow/policy.rs || grep -q 'pub fn execute' src/core/workflow/policy.rs"
+    status: not_started
+
+  - id: e01s12-task-04
+    description: "Replace inline retry in WorkflowExecutor::run_with_policy with RetryEngine::execute()"
+    verify: "grep -q 'RetryEngine' src/core/workflow/execution.rs"
+    status: not_started
+
+  - id: e01s12-task-05
+    description: "Tests: linear backoff retries N times, exponential backoff grows correctly, jitter produces varying delays, non-retryable error stops immediately, max attempts exhausted"
+    verify: "cargo test -- retry 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
