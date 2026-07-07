@@ -60,8 +60,9 @@ use crate::core::{
     events::{
         bus::EventBus,
         event_types::{
-            EngineEvent, ExecutionPlanBuiltEvent, SkillCompletedEvent, SkillFailedEvent,
-            SkillStartedEvent, WorkflowCompletedEvent, WorkflowFailedEvent, WorkflowStartedEvent,
+            EngineEvent, ExecutionPlanBuiltEvent, NodeQueuedEvent, SkillCompletedEvent,
+            SkillFailedEvent, SkillStartedEvent, WorkflowCancelledEvent, WorkflowCompletedEvent,
+            WorkflowFailedEvent, WorkflowStartedEvent,
         },
     },
     ids::{ExecutionId, WorkflowId},
@@ -247,6 +248,12 @@ where
                     execution_id = %execution_id,
                     "Workflow cancelled during execution"
                 );
+                self.emit_event(EngineEvent::WorkflowCancelled(WorkflowCancelledEvent {
+                    execution_id,
+                    elapsed_ms: ctx.elapsed().as_millis() as u64,
+                    reason: Some("cancelled by user or external signal".to_string()),
+                }));
+
                 summary.state = WorkflowState::Cancelled;
                 summary.node_diagnostics = ctx.node_diagnostics.clone();
                 summary.metadata.finish();
@@ -263,6 +270,13 @@ where
                     elapsed_ms = ctx.elapsed().as_millis(),
                     "Workflow timed out"
                 );
+                self.emit_event(EngineEvent::WorkflowFailed(WorkflowFailedEvent {
+                    execution_id,
+                    elapsed_ms: ctx.elapsed().as_millis() as u64,
+                    error: "workflow timeout exceeded".to_string(),
+                    failing_skill_id: None,
+                }));
+
                 summary.state = WorkflowState::Failed;
                 summary.node_diagnostics = ctx.node_diagnostics.clone();
                 summary.metadata.finish();
@@ -273,6 +287,15 @@ where
             }
 
             let ready_nodes = WorkflowScheduler::tick(&mut graph);
+
+            // Emit NodeQueued for every node promoted to Ready.
+            for &node in &ready_nodes {
+                self.emit_event(EngineEvent::NodeQueued(NodeQueuedEvent {
+                    execution_id,
+                    skill_id: node.to_string(),
+                    ready_count: ready_nodes.len(),
+                }));
+            }
 
             if ready_nodes.is_empty() && graph.is_complete() {
                 tracing::debug!(
@@ -970,6 +993,138 @@ mod tests {
             }
         }
         assert!(found, "event bus should deliver WorkflowCompleted");
+    }
+
+    #[tokio::test]
+    async fn events_emitted_in_correct_order_for_linear_dag() {
+        // A → B → C — verify every lifecycle event fires.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+        const SKILL_B: SkillDefinition = SkillDefinition {
+            id: "b",
+            name: "B",
+            description: "",
+            version: "1.0.0",
+            dependencies: &["a"],
+        };
+        const SKILL_C: SkillDefinition = SkillDefinition {
+            id: "c",
+            name: "C",
+            description: "",
+            version: "1.0.0",
+            dependencies: &["b"],
+        };
+
+        let bus = EventBus::new(256);
+        let mut rx = bus.subscribe();
+        let registry = make_registry_for(&[&SKILL_A, &SKILL_B, &SKILL_C]);
+        let engine = WorkflowEngine::<()>::new().with_event_bus(bus);
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let _ = engine.run(&registry, &mut ctx).await;
+
+        // Collect all events.
+        let mut events: Vec<EngineEvent> = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+
+        // Verify key events appear.
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::WorkflowStarted(_))),
+            "missing WorkflowStarted"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::ExecutionPlanBuilt(_))),
+            "missing ExecutionPlanBuilt"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::NodeQueued(_))),
+            "missing NodeQueued"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::SkillStarted(_))),
+            "missing SkillStarted"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::SkillCompleted(_))),
+            "missing SkillCompleted"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::WorkflowCompleted(_))),
+            "missing WorkflowCompleted"
+        );
+
+        // Verify ordering: WorkflowStarted is first, WorkflowCompleted is last.
+        assert!(
+            matches!(events.first(), Some(EngineEvent::WorkflowStarted(_))),
+            "WorkflowStarted should be first event"
+        );
+        assert!(
+            matches!(events.last(), Some(EngineEvent::WorkflowCompleted(_))),
+            "WorkflowCompleted should be last event"
+        );
+    }
+
+    #[tokio::test]
+    async fn node_queued_emitted_for_each_promotion() {
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+        const SKILL_B: SkillDefinition = SkillDefinition {
+            id: "b",
+            name: "B",
+            description: "",
+            version: "1.0.0",
+            dependencies: &["a"],
+        };
+
+        let bus = EventBus::new(16);
+        let mut rx = bus.subscribe();
+        let registry = make_registry_for(&[&SKILL_A, &SKILL_B]);
+        let engine = WorkflowEngine::<()>::new().with_event_bus(bus);
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let _ = engine.run(&registry, &mut ctx).await;
+
+        let mut queued_skills = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let EngineEvent::NodeQueued(ev) = event {
+                queued_skills.push(ev.skill_id);
+            }
+        }
+
+        assert!(
+            queued_skills.contains(&"a".to_string()),
+            "NodeQueued should include 'a', got {:?}",
+            queued_skills
+        );
+        assert!(
+            queued_skills.contains(&"b".to_string()),
+            "NodeQueued should include 'b', got {:?}",
+            queued_skills
+        );
     }
 
     // ── Cancellation tests ──────────────────────────────────────────────
