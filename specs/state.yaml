@@ -2,15 +2,15 @@
 # Updated automatically by bigpowers skills. Do not hand-edit runtime keys.
 
 session:
-  active_flow: develop-tdd # build_epic | fix_bug | plan_epic | null
+  active_flow: build_epic # build_epic | fix_bug | plan_epic | null
   active_epic_id: e01 # Phase 1: Engine Completion
   active_story_id: e01s07 # Step 7: WorkflowContext
-  step_index: 7
+  step_index: 8
   mode: team-pr
 
 handoff:
-  next_skill: develop-tdd
-  notes: "All planning complete. Branch e01s07-workflow-context created. 70 tests pass on baseline. Story e01s07 (WorkflowContext) is next — 6 implementation steps with verify commands documented in e01s07-workflow-context.md."
+  next_skill: verify-work
+  notes: "e01s07 (WorkflowContext) implementation complete. 83 tests passing. Next: e01s08 (execution loop), e01s09 (parallel exec), e01s10 (cancellation), e01s11 (timeouts), e01s12 (retry), e01s13 (diagnostics), e01s14 (observability), e01s15 (engine tests). Verify-work or continue to next story?"
 
 git:
   branch: e01s07-workflow-context
