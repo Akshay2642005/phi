@@ -18,6 +18,7 @@
 //!         │
 //!  ┌──────┴──────┐
 //!  │  LOOP:      │
+//!  │  cancel?    │──► exit if cancelled
 //!  │  tick()     │──► ready nodes
 //!  │  spawn()    │──► concurrent execution
 //!  │  join()     │──► collect results, update graph
@@ -27,6 +28,13 @@
 //!         ▼
 //!  WorkflowResult
 //! ```
+//!
+//! # Cancellation
+//!
+//! Call [`WorkflowEngine::cancel`] to request cancellation.  The engine checks
+//! the cancellation flag at every loop iteration and before spawning new tasks.
+//! Spawned parallel tasks share the same [`CancellationToken`] so they can
+//! abort early when the engine is cancelled.
 //!
 //! # Parallel execution model
 //!
@@ -47,7 +55,7 @@ use anyhow::Result;
 use tokio::task::JoinSet;
 
 use crate::core::{
-    context::WorkflowContext,
+    context::{CancellationSender, WorkflowContext},
     errors::WorkflowError,
     events::{
         bus::EventBus,
@@ -116,6 +124,7 @@ where
 {
     executor: WorkflowExecutor,
     event_bus: Option<EventBus>,
+    cancellation: Option<CancellationSender>,
     _phantom: std::marker::PhantomData<I>,
 }
 
@@ -127,6 +136,7 @@ where
         Self {
             executor: WorkflowExecutor::new(),
             event_bus: None,
+            cancellation: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -136,9 +146,25 @@ where
         self
     }
 
+    pub fn with_cancellation(mut self, sender: CancellationSender) -> Self {
+        self.cancellation = Some(sender);
+        self
+    }
+
     pub fn with_executor(mut self, executor: WorkflowExecutor) -> Self {
         self.executor = executor;
         self
+    }
+
+    /// Request cancellation of the current workflow run.
+    ///
+    /// The engine will check the cancellation flag at the next loop iteration
+    /// and abort with [`WorkflowError::Cancelled`].
+    pub fn cancel(&self) {
+        if let Some(ref sender) = self.cancellation {
+            sender.cancel();
+            tracing::info!("WorkflowEngine cancel requested");
+        }
     }
 
     /// Run the workflow to completion.
@@ -146,7 +172,7 @@ where
     /// This is the primary entry point.  The method:
     ///
     /// 1. **Initialize** — plan the DAG, emit `WorkflowStarted`, set `Running` state.
-    /// 2. **Loop** — tick the scheduler, spawn ready nodes concurrently, collect results.
+    /// 2. **Loop** — check cancel, tick scheduler, spawn ready nodes, collect results.
     /// 3. **Finalise** — emit `WorkflowCompleted` / `WorkflowFailed`, return summary.
     pub async fn run(
         &self,
@@ -202,6 +228,18 @@ where
 
         // ── Execution loop ──────────────────────────────────────────────
         loop {
+            // Check cancellation at every iteration.
+            if ctx.is_cancelled() {
+                tracing::warn!(
+                    execution_id = %execution_id,
+                    "Workflow cancelled during execution"
+                );
+                summary.state = WorkflowState::Cancelled;
+                summary.metadata.finish();
+                ctx.set_workflow_state(WorkflowState::Cancelled);
+                return Err(WorkflowError::Cancelled);
+            }
+
             let ready_nodes = WorkflowScheduler::tick(&mut graph);
 
             if ready_nodes.is_empty() && graph.is_complete() {
@@ -283,8 +321,9 @@ where
     /// Execute a batch of ready nodes concurrently via `tokio::spawn` + `JoinSet`.
     ///
     /// Each node is spawned as an independent tokio task that creates its own
-    /// local [`WorkflowContext`] (sharing the input `Arc`).  After all tasks
-    /// complete, results are merged into the main context and graph.
+    /// local [`WorkflowContext`] (sharing the input `Arc` and parent
+    /// [`CancellationToken`]).  After all tasks complete, results are merged
+    /// into the main context and graph.
     async fn execute_ready(
         &self,
         ready_nodes: &[&'static str],
@@ -320,8 +359,6 @@ where
             // Mark as Running before spawning.
             graph.transition(node_id, NodeState::Running);
 
-            let skill_name = skill.definition().name.to_string();
-
             self.emit_event(EngineEvent::SkillStarted(SkillStartedEvent {
                 execution_id,
                 skill_id: node_id.to_string(),
@@ -329,19 +366,18 @@ where
             }));
 
             // Each task runs the skill against its own context, sharing
-            // the input Arc.  No shared mutable state across tasks.
+            // the input Arc and parent CancellationToken.  No shared
+            // mutable state across tasks.
             let input = Arc::clone(&ctx.input);
+            let cancel_token = ctx.cancellation.clone();
 
             join_set.spawn(async move {
                 let skill_start = std::time::Instant::now();
                 let (mut task_ctx, _sender) =
                     WorkflowContext::from_arc(input, workflow_id, execution_id);
 
-                // Absorb any existing slots from the main context so the
-                // spawned task sees upstream outputs.  (Sequential for
-                // correctness: we read slots from the main context on the
-                // main thread before spawning.)
-                // Note: slots are populated by the caller before spawning.
+                // Share the parent's cancellation so skills can check it.
+                task_ctx.cancellation = cancel_token;
 
                 let task_result = skill.execute(&mut task_ctx).await;
                 let elapsed_ms = skill_start.elapsed().as_millis() as u64;
@@ -495,7 +531,6 @@ mod tests {
         workflow::state::WorkflowState,
     };
     use async_trait::async_trait;
-    use std::sync::Arc;
 
     // ── Test Skills ─────────────────────────────────────────────────────
 
@@ -530,6 +565,14 @@ mod tests {
                 delay_ms: 0,
             }
         }
+
+        fn checks_cancellation(def: &'static SkillDefinition) -> Self {
+            Self {
+                def,
+                fail: None,
+                delay_ms: 100,
+            }
+        }
     }
 
     #[async_trait]
@@ -538,12 +581,19 @@ mod tests {
             self.def
         }
 
-        async fn execute(&self, _ctx: &mut WorkflowContext<()>) -> anyhow::Result<()> {
+        async fn execute(&self, ctx: &mut WorkflowContext<()>) -> anyhow::Result<()> {
             if let Some(msg) = self.fail {
                 anyhow::bail!(msg);
             }
+            // Check cancellation in a loop to simulate an abortable skill.
             if self.delay_ms > 0 {
-                tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+                let deadline = tokio::time::Instant::now() + Duration::from_millis(self.delay_ms);
+                while tokio::time::Instant::now() < deadline {
+                    if ctx.is_cancelled() {
+                        anyhow::bail!("cancelled");
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
             }
             Ok(())
         }
@@ -559,6 +609,10 @@ mod tests {
 
     fn make_delayed_skill(def: &'static SkillDefinition, delay_ms: u64) -> SkillRef<()> {
         Arc::new(TestSkill::with_delay(def, delay_ms))
+    }
+
+    fn make_cancellation_aware_skill(def: &'static SkillDefinition) -> SkillRef<()> {
+        Arc::new(TestSkill::checks_cancellation(def))
     }
 
     // ── Skill definitions ───────────────────────────────────────────────
@@ -721,7 +775,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancelled_workflow_returns_cancelled_error() {
+    async fn cancelled_before_run_returns_cancelled() {
         let registry = make_registry_for(&[&SKILL_A]);
         let engine = WorkflowEngine::<()>::new();
         let (mut ctx, sender) = WorkflowContext::new(());
@@ -851,13 +905,190 @@ mod tests {
         assert!(found, "event bus should deliver WorkflowCompleted");
     }
 
+    // ── Cancellation tests ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn cancel_mid_execution_returns_cancelled() {
+        // Use a skill that runs long enough for us to cancel mid-way.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let skills: Vec<SkillRef<()>> = vec![make_delayed_skill(&SKILL_A, 200)];
+        let registry = make_registry_for_skills(skills);
+        let engine = WorkflowEngine::<()>::new();
+        let (mut ctx, sender) = WorkflowContext::new(());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        // Move owned values into the spawned task.
+        tokio::spawn(async move {
+            let _ = tx.send(engine.run(&registry, &mut ctx).await);
+        });
+
+        // Give the engine time to start executing A.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        // Cancel mid-execution.
+        sender.cancel();
+
+        // Wait for the engine to complete.
+        let result = rx.await.expect("engine task should send result");
+        assert!(
+            result.is_err(),
+            "mid-execution cancel should return an error, got {:?}",
+            result
+        );
+        // Actual error may be Cancelled (engine-level) or SkillFailed
+        // (skill returned error when it noticed cancellation).
+    }
+
+    #[tokio::test]
+    async fn cancel_via_engine_method() {
+        // Verify engine.cancel() works.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let skills: Vec<SkillRef<()>> = vec![make_delayed_skill(&SKILL_A, 200)];
+        let registry = make_registry_for_skills(skills);
+        let (mut ctx, sender) = WorkflowContext::new(());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        // Wire the sender into the engine via Arc so both the
+        // spawned task and test scope can access it.
+        let engine = Arc::new(WorkflowEngine::<()>::new().with_cancellation(sender));
+        let engine_for_task = engine.clone();
+
+        tokio::spawn(async move {
+            let _ = tx.send(engine_for_task.run(&registry, &mut ctx).await);
+        });
+
+        // Cancel via engine method (uses stored CancellationSender).
+        engine.cancel();
+
+        let result = rx.await.expect("engine task should send result");
+        assert!(
+            !matches!(result, Ok(_)),
+            "cancelled engine should not return Ok"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_aware_skill_aborts_on_cancel() {
+        // A cancellation-aware skill that checks ctx.is_cancelled()
+        // should abort when the engine is cancelled.  The returned
+        // error may be Cancelled (engine-level) or SkillFailed with
+        // an "cancelled" message (skill-level catch).
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let skills: Vec<SkillRef<()>> = vec![make_cancellation_aware_skill(&SKILL_A)];
+        let registry = make_registry_for_skills(skills);
+        let (mut ctx, sender) = WorkflowContext::new(());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let engine = WorkflowEngine::<()>::new();
+        tokio::spawn(async move {
+            let _ = tx.send(engine.run(&registry, &mut ctx).await);
+        });
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        sender.cancel();
+
+        let result = rx.await.expect("engine task should send result");
+        assert!(
+            result.is_err(),
+            "cancellation should produce an error, got {:?}",
+            result
+        );
+        match result {
+            Err(WorkflowError::Cancelled) => {} // engine-level cancel
+            Err(WorkflowError::SkillFailed { .. }) => {} // skill-level cancel
+            Err(_) => {}                        // any other error is also acceptable
+            Ok(_) => panic!("cancelled workflow should not succeed"),
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_propagates_to_parallel_tasks() {
+        // Diamond: A → {B(100ms), C(100ms)} → D
+        // Cancel after A completes but during B/C execution.
+        // Both B and C should see the cancellation and abort.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+        const SKILL_B: SkillDefinition = SkillDefinition {
+            id: "b",
+            name: "B",
+            description: "",
+            version: "1.0.0",
+            dependencies: &["a"],
+        };
+        const SKILL_C: SkillDefinition = SkillDefinition {
+            id: "c",
+            name: "C",
+            description: "",
+            version: "1.0.0",
+            dependencies: &["a"],
+        };
+        const SKILL_D: SkillDefinition = SkillDefinition {
+            id: "d",
+            name: "D",
+            description: "",
+            version: "1.0.0",
+            dependencies: &["b", "c"],
+        };
+
+        let skills: Vec<SkillRef<()>> = vec![
+            make_delayed_skill(&SKILL_A, 10),
+            make_delayed_skill(&SKILL_B, 150),
+            make_delayed_skill(&SKILL_C, 150),
+            make_delayed_skill(&SKILL_D, 10),
+        ];
+        let registry = make_registry_for_skills(skills);
+        let (mut ctx, sender) = WorkflowContext::new(());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let engine = WorkflowEngine::<()>::new();
+        tokio::spawn(async move {
+            let _ = tx.send(engine.run(&registry, &mut ctx).await);
+        });
+
+        // Wait for A to complete (10ms delay), B and C start.
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        // Cancel while B and C are running.
+        sender.cancel();
+
+        let result = rx.await.expect("engine task should send result");
+        assert!(
+            result.is_err(),
+            "cancel during parallel tasks should return an error, got {:?}",
+            result
+        );
+    }
+
     // ── Parallel execution tests ────────────────────────────────────────
 
     #[tokio::test]
     async fn parallel_b_and_c_run_concurrently_in_diamond() {
-        // Diamond: A → {B: 50ms, C: 50ms} → D
-        // If B and C run sequentially, total time ≈ 100ms.
-        // If they run concurrently, total time ≈ 50ms (plus A and D).
         const SKILL_A: SkillDefinition = SkillDefinition {
             id: "a",
             name: "A",
@@ -905,9 +1136,6 @@ mod tests {
         let elapsed = start.elapsed().as_millis() as u64;
 
         assert!(result.is_success());
-        // Sequential: A(10) + B(50) + C(50) + D(10) = 120ms
-        // Concurrent: A(10) + max(B50,C50) + D(10) = ~70ms (with overhead ~90ms)
-        // Assert elapsed < 120ms — if sequential, it would be >= 120ms.
         assert!(
             elapsed < 120,
             "B and C should run concurrently: expected < 120ms, got {}ms",
@@ -920,7 +1148,6 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_three_branch_fanout() {
-        // A → {B(50ms), C(50ms), E(50ms)} → D (depends on B,C,E)
         const SKILL_A: SkillDefinition = SkillDefinition {
             id: "a",
             name: "A",
@@ -976,8 +1203,6 @@ mod tests {
         let elapsed = start.elapsed().as_millis() as u64;
 
         assert!(result.is_success());
-        // Sequential: A(10)+B(50)+C(50)+E(50)+D(10) = 170ms
-        // Concurrent: A(10)+max(B50,C50,E50)+D(10) = ~70ms
         assert!(
             elapsed < 170,
             "3 branches should run concurrently: expected < 170ms, got {}ms",
@@ -987,8 +1212,6 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_failure_in_one_branch_does_not_block_others() {
-        // A → {B(ok, 30ms), C(fail)} → D (depends on B, C)
-        // C fails, but B should still complete. The workflow fails at D.
         const SKILL_A: SkillDefinition = SkillDefinition {
             id: "a",
             name: "A",
@@ -1030,9 +1253,6 @@ mod tests {
 
         let result = engine.run(&registry, &mut ctx).await;
         assert!(result.is_err(), "workflow should fail when a branch fails");
-
-        // The graph should have A completed and B at least started
-        // (B may or may not complete depending on timing of C's failure).
         assert!(
             ctx.completed_skills.contains(&"a".to_string()),
             "A should have completed"

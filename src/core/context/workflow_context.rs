@@ -554,7 +554,7 @@ mod tests {
         assert_eq!(snap.nodes_completed, 0);
         assert_eq!(snap.nodes_failed, 0);
         assert_eq!(snap.total_retries, 0);
-        assert!(snap.elapsed_ms >= 0);
+        // elapsed_ms is u64, always >= 0; no assertion needed.
     }
 
     #[test]
