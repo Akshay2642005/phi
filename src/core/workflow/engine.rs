@@ -65,7 +65,10 @@ use crate::core::{
         },
     },
     ids::{ExecutionId, WorkflowId},
-    models::execution::{ExecutionSummary, SkillOutcome},
+    models::{
+        diagnostics::NodeDiagnostics,
+        execution::{ExecutionSummary, SkillOutcome},
+    },
     skill::{SkillRef, SkillRegistry},
     workflow::{
         execution::WorkflowExecutor, graph::WorkflowGraph, node::NodeState,
@@ -245,6 +248,7 @@ where
                     "Workflow cancelled during execution"
                 );
                 summary.state = WorkflowState::Cancelled;
+                summary.node_diagnostics = ctx.node_diagnostics.clone();
                 summary.metadata.finish();
                 ctx.set_workflow_state(WorkflowState::Cancelled);
                 return Err(WorkflowError::Cancelled);
@@ -260,6 +264,7 @@ where
                     "Workflow timed out"
                 );
                 summary.state = WorkflowState::Failed;
+                summary.node_diagnostics = ctx.node_diagnostics.clone();
                 summary.metadata.finish();
                 ctx.set_workflow_state(WorkflowState::Failed);
                 return Err(WorkflowError::Timeout {
@@ -306,6 +311,7 @@ where
                             .unwrap_or_else(|| "unknown error".to_string()),
                     );
                     summary.state = WorkflowState::Failed;
+                    summary.node_diagnostics = ctx.node_diagnostics.clone();
                     summary.metadata.finish();
 
                     return Ok(WorkflowResult { summary });
@@ -314,6 +320,7 @@ where
         } // end loop
 
         // ── Finalize ────────────────────────────────────────────────────
+        summary.node_diagnostics = ctx.node_diagnostics.clone();
         let elapsed_ms = ctx.elapsed().as_millis() as u64;
         let (done, failed, _skipped) = graph.completion_summary();
         let success = failed == 0 && summary.errors.is_empty();
@@ -427,6 +434,27 @@ where
                     result = if task_result.is_ok() { "ok" } else { "err" },
                     "Spawned task completed"
                 );
+
+                // Build per-node diagnostics.
+                let (diag_status, diag_error) = match &task_result {
+                    Ok(()) => (NodeState::Completed, None),
+                    Err(e) => (
+                        NodeState::Failed {
+                            reason: format!("{:#}", e),
+                        },
+                        Some(format!("{:#}", e)),
+                    ),
+                };
+                let output_keys = task_ctx.slots.keys();
+                let diag = NodeDiagnostics::new(node_id).finalize(
+                    diag_status,
+                    0, // spawned tasks don't track retries yet
+                    diag_error,
+                    Vec::new(),
+                    output_keys,
+                    elapsed_ms,
+                );
+                task_ctx.record_node_diagnostics(diag);
 
                 NodeTaskResult {
                     node_id,
@@ -567,7 +595,7 @@ mod tests {
     use super::*;
     use crate::core::{
         skill::{Skill, SkillDefinition},
-        workflow::state::WorkflowState,
+        workflow::{execution::WorkflowExecutor, policy::RetryPolicy, state::WorkflowState},
     };
     use async_trait::async_trait;
 
@@ -1201,6 +1229,169 @@ mod tests {
             err.contains("timed out") || err.contains("SkillFailed"),
             "node timeout error should mention timeout, got: {}",
             err
+        );
+    }
+
+    // ── Diagnostics tests ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn node_diagnostics_recorded_on_success() {
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let registry = make_registry_for(&[&SKILL_A]);
+        let engine = WorkflowEngine::<()>::new();
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let result = engine
+            .run(&registry, &mut ctx)
+            .await
+            .expect("single skill should succeed");
+        assert!(result.is_success());
+        assert_eq!(
+            result.summary.node_diagnostics.len(),
+            1,
+            "should have 1 diagnostic entry"
+        );
+
+        let diag = &result.summary.node_diagnostics[0];
+        assert_eq!(diag.skill_id, "a");
+        assert_eq!(diag.status, NodeState::Completed);
+        assert!(
+            diag.duration_ms >= 0,
+            "duration should be non-negative, got {}",
+            diag.duration_ms
+        );
+        assert!(diag.end_time.is_some(), "end_time should be set");
+        assert!(diag.error.is_none(), "no error on success");
+    }
+
+    #[tokio::test]
+    async fn node_diagnostics_has_retry_count() {
+        // Test that retry_count is correctly propagated in diagnostics.
+        // NOTE: spawned parallel tasks currently bypass run_with_policy,
+        // so retries are 0 for this code path.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let registry = make_registry_for(&[&SKILL_A]);
+        let engine = WorkflowEngine::<()>::new();
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let result = engine
+            .run(&registry, &mut ctx)
+            .await
+            .expect("skill should succeed");
+
+        let diag = &result.summary.node_diagnostics[0];
+        // In spawned-task path, retry_count is always 0 (no retries).
+        assert_eq!(diag.retry_count, 0, "retry_count should be 0");
+        assert!(diag.error.is_none(), "no error on success");
+    }
+
+    #[tokio::test]
+    async fn node_diagnostics_captures_error_on_failure() {
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        struct FailingSkill;
+        #[async_trait::async_trait]
+        impl Skill<()> for FailingSkill {
+            fn definition(&self) -> &'static SkillDefinition {
+                &SKILL_A
+            }
+            async fn execute(&self, _ctx: &mut WorkflowContext<()>) -> anyhow::Result<()> {
+                anyhow::bail!("something went wrong")
+            }
+        }
+
+        let skills: Vec<SkillRef<()>> = vec![Arc::new(FailingSkill)];
+        let registry = make_registry_for_skills(skills);
+        let engine = WorkflowEngine::<()>::new();
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let result = engine.run(&registry, &mut ctx).await;
+        assert!(result.is_err(), "failing skill should produce error");
+
+        // Diagnostics are captured from the context even on failure.
+        let diag = ctx.node_diagnostics.first();
+        assert!(diag.is_some(), "should have diagnostics on failure");
+        let diag = diag.unwrap();
+        assert!(diag.error.is_some(), "should capture error message");
+        assert!(
+            diag.error
+                .as_deref()
+                .unwrap()
+                .contains("something went wrong"),
+            "error should match skill error"
+        );
+        assert!(
+            diag.duration_ms >= 0,
+            "duration should be non-negative even on failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn node_diagnostics_has_output_keys() {
+        use std::sync::Arc;
+
+        struct OutputSkill;
+        #[async_trait::async_trait]
+        impl Skill<()> for OutputSkill {
+            fn definition(&self) -> &'static SkillDefinition {
+                static DEF: SkillDefinition = SkillDefinition {
+                    id: "output_skill",
+                    name: "OutputSkill",
+                    description: "",
+                    version: "1.0.0",
+                    dependencies: &[],
+                };
+                &DEF
+            }
+            async fn execute(&self, ctx: &mut WorkflowContext<()>) -> anyhow::Result<()> {
+                ctx.set("result", 42u32);
+                ctx.set("summary", "done");
+                Ok(())
+            }
+        }
+
+        let skills: Vec<SkillRef<()>> = vec![Arc::new(OutputSkill)];
+        let registry = make_registry_for_skills(skills);
+        let engine = WorkflowEngine::<()>::new();
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let result = engine
+            .run(&registry, &mut ctx)
+            .await
+            .expect("output skill should succeed");
+
+        let diag = result.summary.node_diagnostics.first();
+        assert!(diag.is_some(), "should have diagnostics");
+        let diag = diag.unwrap();
+        assert!(
+            diag.output_keys.contains(&"result".to_string()),
+            "output_keys should contain 'result', got {:?}",
+            diag.output_keys
+        );
+        assert!(
+            diag.output_keys.contains(&"summary".to_string()),
+            "output_keys should contain 'summary', got {:?}",
+            diag.output_keys
         );
     }
 

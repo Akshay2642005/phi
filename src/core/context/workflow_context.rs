@@ -34,9 +34,10 @@ use crate::core::{
     events::{bus::EventBus, event_types::EngineEvent},
     ids::{ArtifactId, ExecutionId, WorkflowId},
     models::{
-        diagnostics::{DiagnosticLevel, WorkflowDiagnostic},
+        diagnostics::{DiagnosticLevel, NodeDiagnostics, WorkflowDiagnostic},
         execution::ExecutionMetadata,
     },
+    workflow::state::NodeState,
     workflow::state::WorkflowState,
 };
 
@@ -100,6 +101,11 @@ impl SlotMap {
 
     pub fn contains(&self, key: &str) -> bool {
         self.0.contains_key(key)
+    }
+
+    /// Return all keys in the map.
+    pub fn keys(&self) -> Vec<String> {
+        self.0.iter().map(|r| r.key().clone()).collect()
     }
 
     /// Copy all entries from another SlotMap into this one.
@@ -203,6 +209,8 @@ where
     pub nodes_failed: u64,
     /// Total number of retry attempts across all nodes.
     pub total_retries: u64,
+    /// Per-node execution diagnostics.
+    pub node_diagnostics: Vec<NodeDiagnostics>,
 }
 
 impl<I> WorkflowContext<I>
@@ -233,6 +241,7 @@ where
             nodes_completed: 0,
             nodes_failed: 0,
             total_retries: 0,
+            node_diagnostics: Vec::new(),
         };
         tracing::trace!(execution_id = %execution_id, "WorkflowContext created");
         (ctx, sender)
@@ -267,6 +276,7 @@ where
             nodes_completed: 0,
             nodes_failed: 0,
             total_retries: 0,
+            node_diagnostics: Vec::new(),
         };
         (ctx, sender)
     }
@@ -278,10 +288,15 @@ where
         (ctx, sender)
     }
 
+    /// Record per-node diagnostics after a skill execution.
+    pub fn record_node_diagnostics(&mut self, diag: NodeDiagnostics) {
+        self.node_diagnostics.push(diag);
+    }
+
     /// Absorb results from a spawned task's context into this one.
     ///
-    /// Merges slots, diagnostics, and skill tracking data without
-    /// overwriting existing entries.
+    /// Merges slots, diagnostics, skill tracking data, and node
+    /// diagnostics without overwriting existing entries.
     pub fn absorb_task_results(&mut self, other: &Self) {
         self.slots.absorb(&other.slots);
         self.diagnostics.extend(other.diagnostics.iter().cloned());
@@ -295,6 +310,8 @@ where
         for a in &other.artifacts {
             self.artifacts.push(Arc::clone(a));
         }
+        self.node_diagnostics
+            .extend(other.node_diagnostics.iter().cloned());
     }
 
     /// Mark the workflow execution as started.

@@ -6,10 +6,13 @@
 
 use std::time::{Duration, SystemTime};
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::core::{
     ids::{ExecutionId, SkillId, WorkflowId},
+    models::diagnostics::NodeDiagnostics,
     workflow::state::{NodeState, WorkflowState},
 };
 
@@ -132,6 +135,8 @@ pub struct ExecutionSummary {
     pub state: WorkflowState,
     pub skill_outcomes: Vec<SkillOutcome>,
     pub errors: Vec<String>,
+    /// Per-node diagnostics captured during execution.
+    pub node_diagnostics: Vec<NodeDiagnostics>,
 }
 
 impl ExecutionSummary {
@@ -141,6 +146,7 @@ impl ExecutionSummary {
             state: WorkflowState::Pending,
             skill_outcomes: Vec::new(),
             errors: Vec::new(),
+            node_diagnostics: Vec::new(),
         }
     }
 

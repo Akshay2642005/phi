@@ -25,6 +25,7 @@ use tokio::time::timeout;
 use crate::core::{
     context::WorkflowContext,
     errors::{SkillError, WorkflowError},
+    models::diagnostics::NodeDiagnostics,
     skill::SkillRef,
     workflow::{graph::WorkflowGraph, policy::RetryPolicy, state::NodeState},
 };
@@ -97,8 +98,30 @@ impl WorkflowExecutor {
         );
 
         let start = std::time::Instant::now();
-        let result = self.run_with_policy(skill, ctx).await;
+        let (result, retry_count) = self.run_with_policy(skill, ctx).await;
         let elapsed_ms = start.elapsed().as_millis() as u64;
+
+        // Build diagnostics entry.
+        let (status, error) = match &result {
+            Ok(()) => (NodeState::Completed, None),
+            Err(e) => (
+                NodeState::Failed {
+                    reason: format!("{:#}", e),
+                },
+                Some(format!("{:#}", e)),
+            ),
+        };
+        let output_keys = ctx.slots.keys();
+        let diag = NodeDiagnostics::new(def.id).finalize(
+            status,
+            retry_count,
+            error,
+            Vec::new(),
+            output_keys,
+            elapsed_ms,
+        );
+        ctx.total_retries += retry_count as u64;
+        ctx.record_node_diagnostics(diag);
 
         match result {
             Ok(()) => {
@@ -109,13 +132,14 @@ impl WorkflowExecutor {
                     execution_id = %execution_id,
                     skill_id = skill_id,
                     elapsed_ms,
+                    retry_count,
                     "Skill completed successfully"
                 );
 
                 Ok(())
             }
             Err(e) => {
-                let reason = e.to_string();
+                let reason = format!("{:#}", e);
                 graph.transition(
                     def.id,
                     NodeState::Failed {
@@ -129,6 +153,7 @@ impl WorkflowExecutor {
                     execution_id = %execution_id,
                     skill_id = skill_id,
                     elapsed_ms,
+                    retry_count,
                     error = %e,
                     "Skill execution failed"
                 );
@@ -146,11 +171,15 @@ impl WorkflowExecutor {
     /// Uses the [`RetryPolicy`]'s back-off config, predicate, and
     /// strategy to drive the retry loop.  Each attempt is bounded by
     /// [`node_timeout`](Self::node_timeout) when set.
+    /// Run a skill with retry policy and optional node timeout.
+    ///
+    /// Returns `(result, retry_count)` where `retry_count` is the number
+    /// of retries made before success or final failure.
     async fn run_with_policy<I>(
         &self,
         skill: &SkillRef<I>,
         ctx: &mut WorkflowContext<I>,
-    ) -> anyhow::Result<()>
+    ) -> (anyhow::Result<()>, u32)
     where
         I: Send + Sync + std::fmt::Debug + 'static,
     {
@@ -166,13 +195,13 @@ impl WorkflowExecutor {
             let result = if let Some(dur) = self.node_timeout {
                 match timeout(dur, skill.execute(ctx)).await {
                     Ok(r) => r,
-                    Err(_elapsed) => anyhow::bail!(
+                    Err(_elapsed) => Err(anyhow::anyhow!(
                         "skill '{}' timed out after {} ms (attempt {}/{})",
                         skill_id,
                         dur.as_millis(),
                         attempt,
                         max,
-                    ),
+                    )),
                 }
             } else {
                 skill.execute(ctx).await
@@ -187,11 +216,13 @@ impl WorkflowExecutor {
                         elapsed_ms,
                         "Skill execution attempt succeeded"
                     );
-                    return Ok(());
+                    let retries = attempt.saturating_sub(1) as u32;
+                    return (Ok(()), retries);
                 }
                 Err(e) => {
                     let elapsed_ms = start.elapsed().as_millis() as u64;
                     let error_msg = format!("{:#}", e);
+                    let retries = attempt.saturating_sub(1) as u32;
 
                     if attempt >= max {
                         tracing::error!(
@@ -202,7 +233,7 @@ impl WorkflowExecutor {
                             error = %e,
                             "Skill failed; all attempts exhausted"
                         );
-                        return Err(e);
+                        return (Err(e), retries);
                     }
 
                     if !predicate(skill_id, &error_msg) {
@@ -214,7 +245,7 @@ impl WorkflowExecutor {
                             error = %e,
                             "Skill failed; non-retryable error"
                         );
-                        return Err(e);
+                        return (Err(e), retries);
                     }
 
                     let delay = backoff_cfg.delay_for(attempt, strategy);
@@ -251,6 +282,7 @@ mod tests {
     use super::*;
     use crate::core::{
         context::WorkflowContext,
+        models::diagnostics::NodeDiagnostics,
         skill::{Skill, SkillDefinition, SkillRef},
     };
     use async_trait::async_trait;
@@ -296,7 +328,7 @@ mod tests {
         let mut graph = WorkflowGraph::new();
         graph.add_node(skill.clone());
 
-        let result = executor.run_with_policy(&skill, &mut ctx).await;
+        let (result, _retries) = executor.run_with_policy(&skill, &mut ctx).await;
         assert!(result.is_ok(), "no timeout should complete ok");
     }
 
@@ -306,7 +338,7 @@ mod tests {
         let executor = WorkflowExecutor::with_node_timeout(Duration::from_millis(20));
         let (mut ctx, _) = WorkflowContext::new(());
 
-        let result = executor.run_with_policy(&skill, &mut ctx).await;
+        let (result, _retries) = executor.run_with_policy(&skill, &mut ctx).await;
         assert!(result.is_err(), "timeout should produce error");
         let err = result.unwrap_err().to_string();
         assert!(
@@ -321,7 +353,7 @@ mod tests {
         let executor = WorkflowExecutor::with_node_timeout(Duration::from_millis(100));
         let (mut ctx, _) = WorkflowContext::new(());
 
-        let result = executor.run_with_policy(&skill, &mut ctx).await;
+        let (result, _retries) = executor.run_with_policy(&skill, &mut ctx).await;
         assert!(result.is_ok(), "skill within timeout should succeed");
     }
 }
