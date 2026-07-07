@@ -1550,6 +1550,99 @@ mod tests {
         );
     }
 
+    // ── Integration tests ───────────────────────────────────────────────-
+
+    #[tokio::test]
+    async fn panic_in_skill_does_not_hang_engine() {
+        // A panicking skill results in a JoinError from the spawned task.
+        // The engine should not hang — the global timeout protects against
+        // stuck nodes, or the error propagates through.
+        #[derive(Clone)]
+        struct PanicSkill;
+        #[async_trait::async_trait]
+        impl Skill<()> for PanicSkill {
+            fn definition(&self) -> &'static SkillDefinition {
+                static DEF: SkillDefinition = SkillDefinition {
+                    id: "panic",
+                    name: "Panic",
+                    description: "",
+                    version: "1.0.0",
+                    dependencies: &[],
+                };
+                &DEF
+            }
+            async fn execute(&self, _ctx: &mut WorkflowContext<()>) -> anyhow::Result<()> {
+                panic!("skill panicked intentionally")
+            }
+        }
+
+        let skills: Vec<SkillRef<()>> = vec![Arc::new(PanicSkill)];
+        let registry = make_registry_for_skills(skills);
+        let engine = WorkflowEngine::<()>::new().with_global_timeout(Duration::from_secs(5));
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        // Use an outer timeout to prevent the test itself from hanging.
+        let result =
+            tokio::time::timeout(Duration::from_secs(6), engine.run(&registry, &mut ctx)).await;
+
+        match result {
+            Ok(Err(WorkflowError::Timeout { .. })) => {
+                // Global timeout fired — engine didn't hang.
+            }
+            Ok(Err(_)) => {
+                // Some other error (skill failed, JoinError propagated).
+            }
+            Ok(Ok(_)) => panic!("engine should not succeed after panic"),
+            Err(_elapsed) => panic!("test timeout — engine hung on panic"),
+        }
+    }
+
+    #[tokio::test]
+    async fn large_linear_graph_completes() {
+        // Build a linear chain of 100 nodes.
+        let mut raw_defs = Vec::new();
+        for i in 0..100usize {
+            let id = Box::leak(format!("n{}", i).into_boxed_str());
+            let deps: &'static [&'static str] = if i == 0 {
+                &[]
+            } else {
+                let dep: &'static str = Box::leak(format!("n{}", i - 1).into_boxed_str());
+                Box::leak(Box::new([dep]))
+            };
+            raw_defs.push(SkillDefinition {
+                id,
+                name: "",
+                description: "",
+                version: "1.0.0",
+                dependencies: deps,
+            });
+        }
+        let raw_defs: &'static [SkillDefinition] = Box::leak(raw_defs.into_boxed_slice());
+        let def_refs: Vec<&'static SkillDefinition> = raw_defs.iter().collect();
+        let registry = make_registry_for(&def_refs);
+        let engine = WorkflowEngine::<()>::new();
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let start = std::time::Instant::now();
+        let result = engine
+            .run(&registry, &mut ctx)
+            .await
+            .expect("large graph should complete successfully");
+        let elapsed = start.elapsed();
+
+        assert!(result.is_success(), "large graph should succeed");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "large graph should complete within 5s, took {:?}",
+            elapsed
+        );
+        assert_eq!(
+            result.summary.skill_outcomes.len(),
+            100,
+            "all 100 skills should have outcomes"
+        );
+    }
+
     // ── Parallel execution tests ────────────────────────────────────────
 
     #[tokio::test]
