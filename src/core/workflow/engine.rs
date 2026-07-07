@@ -125,6 +125,7 @@ where
     executor: WorkflowExecutor,
     event_bus: Option<EventBus>,
     cancellation: Option<CancellationSender>,
+    global_timeout: Option<Duration>,
     _phantom: std::marker::PhantomData<I>,
 }
 
@@ -137,6 +138,7 @@ where
             executor: WorkflowExecutor::new(),
             event_bus: None,
             cancellation: None,
+            global_timeout: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -153,6 +155,12 @@ where
 
     pub fn with_executor(mut self, executor: WorkflowExecutor) -> Self {
         self.executor = executor;
+        self
+    }
+
+    /// Set a global timeout for the entire workflow run.
+    pub fn with_global_timeout(mut self, timeout: Duration) -> Self {
+        self.global_timeout = Some(timeout);
         self
     }
 
@@ -227,6 +235,8 @@ where
         summary.state = WorkflowState::Running;
 
         // ── Execution loop ──────────────────────────────────────────────
+        let workflow_deadline = self.global_timeout.map(|d| tokio::time::Instant::now() + d);
+
         loop {
             // Check cancellation at every iteration.
             if ctx.is_cancelled() {
@@ -238,6 +248,23 @@ where
                 summary.metadata.finish();
                 ctx.set_workflow_state(WorkflowState::Cancelled);
                 return Err(WorkflowError::Cancelled);
+            }
+
+            // Check workflow timeout at every iteration.
+            if let Some(deadline) = workflow_deadline
+                && tokio::time::Instant::now() >= deadline
+            {
+                tracing::warn!(
+                    execution_id = %execution_id,
+                    elapsed_ms = ctx.elapsed().as_millis(),
+                    "Workflow timed out"
+                );
+                summary.state = WorkflowState::Failed;
+                summary.metadata.finish();
+                ctx.set_workflow_state(WorkflowState::Failed);
+                return Err(WorkflowError::Timeout {
+                    elapsed_ms: ctx.elapsed().as_millis() as u64,
+                });
             }
 
             let ready_nodes = WorkflowScheduler::tick(&mut graph);
@@ -370,6 +397,7 @@ where
             // mutable state across tasks.
             let input = Arc::clone(&ctx.input);
             let cancel_token = ctx.cancellation.clone();
+            let node_timeout = self.executor.node_timeout;
 
             join_set.spawn(async move {
                 let skill_start = std::time::Instant::now();
@@ -379,7 +407,18 @@ where
                 // Share the parent's cancellation so skills can check it.
                 task_ctx.cancellation = cancel_token;
 
-                let task_result = skill.execute(&mut task_ctx).await;
+                let task_result = if let Some(dur) = node_timeout {
+                    match tokio::time::timeout(dur, skill.execute(&mut task_ctx)).await {
+                        Ok(r) => r,
+                        Err(_elapsed) => Err(anyhow::anyhow!(
+                            "skill '{}' timed out after {} ms",
+                            node_id,
+                            dur.as_millis(),
+                        )),
+                    }
+                } else {
+                    skill.execute(&mut task_ctx).await
+                };
                 let elapsed_ms = skill_start.elapsed().as_millis() as u64;
 
                 tracing::debug!(
@@ -468,7 +507,7 @@ where
                 }
                 Err(e) => {
                     let elapsed_ms = node_result.elapsed_ms;
-                    let error_msg = e.to_string();
+                    let error_msg: String = format!("{}", e);
 
                     ctx.increment_failed();
                     graph.transition(
@@ -1082,6 +1121,86 @@ mod tests {
             result.is_err(),
             "cancel during parallel tasks should return an error, got {:?}",
             result
+        );
+    }
+
+    // ── Timeout tests ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn workflow_timeout_fires_when_exceeded() {
+        // A single long-running skill should be killed by workflow timeout.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let skills: Vec<SkillRef<()>> = vec![make_delayed_skill(&SKILL_A, 200)];
+        let registry = make_registry_for_skills(skills);
+        let executor = WorkflowExecutor::new();
+        let engine = WorkflowEngine::<()>::new()
+            .with_executor(executor)
+            .with_global_timeout(Duration::from_millis(30));
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let result = engine.run(&registry, &mut ctx).await;
+        assert!(
+            matches!(result, Err(WorkflowError::Timeout { .. })),
+            "workflow timeout should return Timeout error, got {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn workflow_timeout_completes_before_deadline() {
+        // Fast skill completes within the global timeout.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let registry = make_registry_for(&[&SKILL_A]);
+        let engine = WorkflowEngine::<()>::new().with_global_timeout(Duration::from_secs(5));
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let result = engine
+            .run(&registry, &mut ctx)
+            .await
+            .expect("fast skill should complete within timeout");
+        assert!(result.is_success());
+    }
+
+    #[tokio::test]
+    async fn node_timeout_overrides_global() {
+        // Node with short timeout should fail even with long global timeout.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let skills: Vec<SkillRef<()>> = vec![make_delayed_skill(&SKILL_A, 200)];
+        let registry = make_registry_for_skills(skills);
+        let executor = WorkflowExecutor::with_node_timeout(Duration::from_millis(20));
+        let engine = WorkflowEngine::<()>::new()
+            .with_executor(executor)
+            .with_global_timeout(Duration::from_secs(5));
+        let (mut ctx, _sender) = WorkflowContext::new(());
+
+        let result = engine.run(&registry, &mut ctx).await;
+        assert!(result.is_err(), "node timeout should produce an error");
+        let err = format!("{:?}", result);
+        assert!(
+            err.contains("timed out") || err.contains("SkillFailed"),
+            "node timeout error should mention timeout, got: {}",
+            err
         );
     }
 
