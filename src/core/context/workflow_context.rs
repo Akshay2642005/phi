@@ -30,8 +30,13 @@ use dashmap::DashMap;
 use tokio::sync::watch;
 
 use crate::core::{
-    ids::{ExecutionId, WorkflowId},
-    models::diagnostics::{DiagnosticLevel, WorkflowDiagnostic},
+    artifact::{ArtifactMeta, ArtifactRef},
+    events::{bus::EventBus, event_types::EngineEvent},
+    ids::{ArtifactId, ExecutionId, WorkflowId},
+    models::{
+        diagnostics::{DiagnosticLevel, WorkflowDiagnostic},
+        execution::ExecutionMetadata,
+    },
     workflow::state::WorkflowState,
 };
 
@@ -147,6 +152,15 @@ impl ExecutionTracker {
     }
 }
 
+/// Runtime metrics snapshot for a workflow execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MetricsSnapshot {
+    pub elapsed_ms: u64,
+    pub nodes_completed: u64,
+    pub nodes_failed: u64,
+    pub total_retries: u64,
+}
+
 #[derive(Debug)]
 pub struct WorkflowContext<I>
 where
@@ -164,6 +178,18 @@ where
     pub variables: DashMap<String, String>,
     pub cancellation: CancellationToken,
     pub diagnostics: Vec<WorkflowDiagnostic>,
+    /// Artifacts produced by skills during workflow execution.
+    pub artifacts: Vec<ArtifactRef>,
+    /// Execution metadata tracking lifecycle timestamps.
+    pub execution_metadata: ExecutionMetadata,
+    /// Optional event bus for emitting execution events.
+    pub event_bus: Option<EventBus>,
+    /// Number of nodes that completed successfully.
+    pub nodes_completed: u64,
+    /// Number of nodes that failed.
+    pub nodes_failed: u64,
+    /// Total number of retry attempts across all nodes.
+    pub total_retries: u64,
 }
 
 impl<I> WorkflowContext<I>
@@ -173,9 +199,10 @@ where
     #[tracing::instrument(skip(input), fields(execution_id))]
     pub fn new(input: I) -> (Self, CancellationSender) {
         let execution_id = ExecutionId::new();
+        let workflow_id = WorkflowId::new();
         let (token, sender) = CancellationToken::new();
         let ctx = Self {
-            workflow_id: WorkflowId::new(),
+            workflow_id,
             execution_id,
             started_at: Instant::now(),
             workflow_state: WorkflowState::Pending,
@@ -187,9 +214,70 @@ where
             variables: DashMap::new(),
             cancellation: token,
             diagnostics: Vec::new(),
+            artifacts: Vec::new(),
+            execution_metadata: ExecutionMetadata::new(execution_id, workflow_id),
+            event_bus: None,
+            nodes_completed: 0,
+            nodes_failed: 0,
+            total_retries: 0,
         };
         tracing::trace!(execution_id = %execution_id, "WorkflowContext created");
         (ctx, sender)
+    }
+
+    /// Create a new WorkflowContext with an event bus attached.
+    pub fn with_event_bus(input: I, bus: EventBus) -> (Self, CancellationSender) {
+        let (mut ctx, sender) = Self::new(input);
+        ctx.event_bus = Some(bus);
+        (ctx, sender)
+    }
+
+    /// Mark the workflow execution as started.
+    pub fn mark_started(&mut self) {
+        self.execution_metadata.timestamps.mark_started();
+    }
+
+    /// Add an artifact to the context.
+    pub fn add_artifact(&mut self, artifact: ArtifactRef) {
+        self.artifacts.push(artifact);
+    }
+
+    /// Number of artifacts stored.
+    pub fn artifact_count(&self) -> usize {
+        self.artifacts.len()
+    }
+
+    /// Emit an event through the optional event bus.
+    pub fn emit(&self, event: EngineEvent) -> bool {
+        self.event_bus
+            .as_ref()
+            .map(|bus| bus.emit(event))
+            .unwrap_or(false)
+    }
+
+    /// Increment completed nodes counter.
+    pub fn increment_completed(&mut self) {
+        self.nodes_completed += 1;
+    }
+
+    /// Increment failed nodes counter.
+    pub fn increment_failed(&mut self) {
+        self.nodes_failed += 1;
+    }
+
+    /// Increment retry counter.
+    pub fn increment_retries(&mut self) {
+        self.total_retries += 1;
+    }
+
+    /// Take a snapshot of current runtime metrics.
+    pub fn metrics_snapshot(&self) -> MetricsSnapshot {
+        MetricsSnapshot {
+            elapsed_ms: self.elapsed().as_millis() as u64,
+            nodes_completed: self.nodes_completed,
+            nodes_failed: self.nodes_failed,
+            total_retries: self.total_retries,
+        }
     }
 
     #[inline]
@@ -209,6 +297,10 @@ where
             to = %state,
             "Workflow state transition"
         );
+        // Auto-finalize metadata on terminal states.
+        if state.is_terminal() && self.execution_metadata.timestamps.finished_at.is_none() {
+            self.execution_metadata.finish();
+        }
         self.workflow_state = state;
     }
 
@@ -273,5 +365,185 @@ where
     #[inline]
     pub fn is_cancelled(&self) -> bool {
         self.cancellation.is_cancelled()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{
+        artifact::{Artifact, into_artifact_ref},
+        events::{bus::EventBus, event_types::*},
+        ids::ArtifactId,
+    };
+
+    /// A simple test artifact.
+    #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+    struct TestArtifact {
+        data: String,
+    }
+
+    impl Artifact for TestArtifact {
+        fn kind_tag(&self) -> &'static str {
+            "test_artifact"
+        }
+        fn is_complete(&self) -> bool {
+            true
+        }
+    }
+
+    // --- Artifact tests ---
+
+    #[test]
+    fn test_artifact_storage() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+        assert_eq!(ctx.artifact_count(), 0);
+
+        let artifact = TestArtifact {
+            data: "hello".to_string(),
+        };
+        ctx.add_artifact(into_artifact_ref(artifact));
+        assert_eq!(ctx.artifact_count(), 1);
+    }
+
+    #[test]
+    fn test_artifact_storage_multiple() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+        ctx.add_artifact(into_artifact_ref(TestArtifact {
+            data: "a".to_string(),
+        }));
+        ctx.add_artifact(into_artifact_ref(TestArtifact {
+            data: "b".to_string(),
+        }));
+        assert_eq!(ctx.artifact_count(), 2);
+    }
+
+    // --- ExecutionMetadata tests ---
+
+    #[test]
+    fn test_execution_metadata_initialized() {
+        let (ctx, _sender) = WorkflowContext::new("test");
+        assert_eq!(ctx.execution_metadata.workflow_id, ctx.workflow_id);
+        assert_eq!(ctx.execution_metadata.execution_id, ctx.execution_id);
+        assert!(ctx.execution_metadata.timestamps.finished_at.is_none());
+    }
+
+    #[test]
+    fn test_execution_metadata_finalized_on_terminal_state() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+        // Small delay so SystemTime resolution captures elapsed > 0.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        ctx.set_workflow_state(WorkflowState::Completed);
+        assert!(ctx.execution_metadata.timestamps.finished_at.is_some());
+        assert!(
+            ctx.execution_metadata.elapsed_ms > 0,
+            "elapsed_ms should be > 0 after a delay, got {}",
+            ctx.execution_metadata.elapsed_ms
+        );
+    }
+
+    #[test]
+    fn test_mark_started_records_timestamp() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+        assert!(ctx.execution_metadata.timestamps.started_at.is_none());
+        ctx.mark_started();
+        assert!(ctx.execution_metadata.timestamps.started_at.is_some());
+    }
+
+    // --- EventBus tests ---
+
+    #[tokio::test]
+    async fn test_event_bus_emit() {
+        let bus = EventBus::new(16);
+        let mut rx = bus.subscribe();
+        let (ctx, _sender) = WorkflowContext::with_event_bus("test", bus);
+
+        ctx.emit(EngineEvent::WorkflowStarted(WorkflowStartedEvent {
+            execution_id: ctx.execution_id,
+            workflow_id: ctx.workflow_id,
+            skill_count: 0,
+        }));
+
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "subscriber should receive emitted event");
+    }
+
+    #[test]
+    fn test_event_bus_noop_without_bus() {
+        let (ctx, _sender) = WorkflowContext::new("test");
+        // Should not panic when emitting without a bus.
+        let result = ctx.emit(EngineEvent::WorkflowStarted(WorkflowStartedEvent {
+            execution_id: ctx.execution_id,
+            workflow_id: ctx.workflow_id,
+            skill_count: 0,
+        }));
+        assert!(!result, "emit without bus should return false");
+    }
+
+    // --- Metrics tests ---
+
+    #[test]
+    fn test_metrics_initial_values() {
+        let (ctx, _sender) = WorkflowContext::new("test");
+        let snap = ctx.metrics_snapshot();
+        assert_eq!(snap.nodes_completed, 0);
+        assert_eq!(snap.nodes_failed, 0);
+        assert_eq!(snap.total_retries, 0);
+        assert!(snap.elapsed_ms >= 0);
+    }
+
+    #[test]
+    fn test_metrics_increment() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+        ctx.increment_completed();
+        ctx.increment_completed();
+        ctx.increment_failed();
+        ctx.increment_retries();
+        ctx.increment_retries();
+        ctx.increment_retries();
+
+        let snap = ctx.metrics_snapshot();
+        assert_eq!(snap.nodes_completed, 2);
+        assert_eq!(snap.nodes_failed, 1);
+        assert_eq!(snap.total_retries, 3);
+    }
+
+    #[test]
+    fn test_metrics_elapsed_increases() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+        let snap1 = ctx.metrics_snapshot();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let snap2 = ctx.metrics_snapshot();
+        assert!(
+            snap2.elapsed_ms >= snap1.elapsed_ms,
+            "elapsed should increase over time"
+        );
+    }
+
+    // --- Backward compatibility tests ---
+
+    #[test]
+    fn test_cancellation_still_works() {
+        let (ctx, sender) = WorkflowContext::new("test");
+        assert!(!ctx.is_cancelled());
+        sender.cancel();
+        assert!(ctx.is_cancelled());
+    }
+
+    #[test]
+    fn test_slots_still_work() {
+        let (ctx, _sender) = WorkflowContext::new("test");
+        ctx.set("skill_a", 42u32);
+        let val: Option<Arc<u32>> = ctx.get("skill_a");
+        assert_eq!(*val.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_diagnostics_still_work() {
+        let (mut ctx, _sender) = WorkflowContext::new("test");
+        ctx.info("skill_a", "test info");
+        ctx.warn("skill_b", "test warn");
+        ctx.error("skill_c", "test error");
+        assert_eq!(ctx.diagnostics.len(), 3);
     }
 }
