@@ -1,0 +1,50 @@
+# Epic: e01 — Phase 1: Engine Completion
+# Slices the remaining 9 steps of Phase 1 into vertical stories.
+
+id: e01
+title: "Phase 1 — Engine Completion"
+description: >
+  Complete the AI Workflow Engine internals so it can actually execute DAG
+  workflows end-to-end. Covers WorkflowContext, execution loop, parallel
+  execution, cancellation, timeouts, retries, diagnostics, observability,
+  and comprehensive engine tests.
+
+total_bcps: 45
+
+stories:
+  - id: e01s07
+    title: "WorkflowContext — artifacts, metadata, event bus, metrics"
+    bcps: 5
+    status: complete
+  - id: e01s08
+    title: "Execution loop — initialize → tick → update → finalize"
+    bcps: 5
+    status: complete
+  - id: e01s09
+    title: "Parallel execution — tokio::spawn + JoinSet for concurrent nodes"
+    bcps: 8
+    status: complete
+  - id: e01s10
+    title: "Cancellation — wire CancellationToken through engine + ctrl+c"
+    bcps: 3
+    status: complete
+  - id: e01s11
+    title: "Timeout hierarchy — node ≤ workflow ≤ global"
+    bcps: 5
+    status: complete
+  - id: e01s12
+    title: "Retry engine — linear, exponential, jitter strategies"
+    bcps: 5
+    status: complete
+  - id: e01s13
+    title: "Execution diagnostics — timing, retry count, error capture"
+    bcps: 3
+    status: complete
+  - id: e01s14
+    title: "Observability — full event emission at correct lifecycle points"
+    bcps: 3
+    status: complete
+  - id: e01s15
+    title: "Engine tests — comprehensive integration tests"
+    bcps: 8
+    status: complete

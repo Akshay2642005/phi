@@ -1,0 +1,49 @@
+# Story: e02s02 — CLI `run` command
+# Parse a goal from CLI args, wire RuntimePlugin into AppContainer,
+# attach EventBus, execute ReAct workflow, display final answer.
+
+story_id: e02s02
+title: CLI run command
+bcps: 8
+status: not_started
+
+tasks:
+  - id: e02s02-t001
+    description: "Add simple CLI arg parsing in main.rs: cargo run <goal> reads goal string from args"
+    verify: "cargo run -- 'test' 2>&1 | head -5 | grep -q 'Running workflow' && echo 'OK' || echo 'NEEDS WORK'"
+    status: not_started
+
+  - id: e02s02-t002
+    description: "Wire RuntimePlugin into AppContainer - expose register or integrate into build()"
+    verify: "grep -q 'RuntimePlugin' src/bootstrap/container.rs && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s02-t003
+    description: "Wire EventBus into engine - create bus in main(), attach to WorkflowEngine, console subscriber"
+    verify: "grep -q 'EventBus' src/main.rs && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s02-t004
+    description: "Add console event subscriber - human-readable lines for lifecycle events"
+    verify: "grep -q 'WorkflowStarted' src/main.rs && echo 'OK subscriber' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s02-t005
+    description: "Build run_workflow function: RuntimePlugin.register -> SkillRegistry -> WorkflowEngine -> engine.run -> display"
+    verify: "grep -q 'fn run_workflow' src/main.rs && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s02-t006
+    description: "Handle workflow result: print success (final answer), failure (error + diagnostics), cancellation"
+    verify: "grep -q 'WorkflowResult' src/main.rs && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s02-t007
+    description: "Tests: CLI arg parsing unit test, end-to-end mock workflow via run_workflow"
+    verify: "cargo test -- run_workflow 2>&1 | grep -E '^(test result|ok|FAILED)'"
+    status: not_started
+
+  - id: e02s02-t008
+    description: "Update execution-status.yaml: mark e02s02 complete"
+    verify: "grep 'e02s02: complete' specs/execution-status.yaml"
+    status: not_started

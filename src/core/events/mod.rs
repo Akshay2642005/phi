@@ -40,7 +40,7 @@ pub mod event_types;
 pub use bus::EventBus;
 pub use event_types::{
     ArtifactCreatedEvent, EngineEvent, ExecutionPlanBuiltEvent, LlmRequestCompletedEvent,
-    LlmRequestStartedEvent, SkillCompletedEvent, SkillFailedEvent, SkillStartedEvent,
-    ToolCompletedEvent, ToolInvokedEvent, WorkflowCancelledEvent, WorkflowCompletedEvent,
-    WorkflowFailedEvent, WorkflowStartedEvent,
+    LlmRequestStartedEvent, NodeQueuedEvent, SkillCompletedEvent, SkillFailedEvent,
+    SkillStartedEvent, ToolCompletedEvent, ToolInvokedEvent, WorkflowCancelledEvent,
+    WorkflowCompletedEvent, WorkflowFailedEvent, WorkflowStartedEvent,
 };

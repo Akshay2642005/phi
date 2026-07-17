@@ -34,10 +34,7 @@ pub enum WorkflowError {
     DependencyCycle(String),
 
     #[error("skill '{required}' is required by '{dependent}' but is not registered")]
-    MissingDependency {
-        dependent: String,
-        required: String,
-    },
+    MissingDependency { dependent: String, required: String },
 
     #[error("workflow execution plan is empty — no skills to execute")]
     EmptyPlan,
@@ -53,14 +50,10 @@ pub enum WorkflowError {
     Cancelled,
 
     #[error("workflow timed out after {elapsed_ms} ms")]
-    Timeout {
-        elapsed_ms: u64,
-    },
+    Timeout { elapsed_ms: u64 },
 
     #[error("scheduler deadlock: {pending} node(s) pending but none are ready to execute")]
-    SchedulerDeadlock {
-        pending: usize,
-    },
+    SchedulerDeadlock { pending: usize },
 
     #[error("context error: {0}")]
     ContextError(String),

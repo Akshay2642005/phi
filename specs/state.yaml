@@ -1,0 +1,33 @@
+# Session state — AI Workflow Engine
+# Updated automatically by bigpowers skills. Do not hand-edit runtime keys.
+
+session:
+  active_flow: build_epic
+  active_epic_id: e02
+  active_story_id: e02s01
+  step_index: 0
+  mode: team-pr
+
+handoff:
+  next_skill: plan-work
+  notes: "Phase 1 (engine internals) complete - 135 tests. Phase 2 starts: wire the runtime. First step: merge Phase 1 to main, then CLI command, parallel retry fix, tool skills, ReAct integration test."
+
+git:
+  branch: e01s07-workflow-context
+  sha: 9a25c18
+  clean: false
+
+workflow_mode: team-pr
+
+epic_cycle:
+  story_bcps: null
+
+metrics:
+  story_start: null
+  story_end: null
+  cycle_minutes: null
+  bcp_per_hour: null
+
+release:
+  last_tag: null
+  last_publish: null

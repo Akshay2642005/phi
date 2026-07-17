@@ -1,0 +1,76 @@
+# e01s15 Engine tests — comprehensive integration tests
+# Step 15 of Phase 1
+
+story_id: e01s15
+title: "Engine tests — comprehensive integration tests"
+bcps: 8
+status: not_started
+
+description: >
+  Build a comprehensive test suite for the WorkflowEngine. Tests should cover:
+  diamond DAG, linear DAG, branch DAG, cycle detection (at build time), retry
+  with N failures then success, timeout on a slow node, parallel execution (B
+  and C start simultaneously), deadlock detection, cancel mid-execution, panic
+  in a skill, empty workflow (no skills), large graphs (1000 nodes, 5000 edges).
+  These are integration tests that run actual workflows through the engine.
+
+tasks:
+  - id: e01s15-task-01
+    description: "Test: linear DAG — A→B→C executes in order, all complete with correct state transitions"
+    verify: "cargo test -- test_linear_dag 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-02
+    description: "Test: diamond DAG — A→{B,C}→D with B and C executing in parallel after A"
+    verify: "cargo test -- test_diamond_dag 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-03
+    description: "Test: branch DAG — A→B, A→C with no D join; both branches complete independently"
+    verify: "cargo test -- test_branch_dag 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-04
+    description: "Test: cycle detection — registering a cyclic dependency returns a cycle error at build time"
+    verify: "cargo test -- test_cycle_detection 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-05
+    description: "Test: retry — flaky skill fails twice then succeeds; verify 3 attempts recorded"
+    verify: "cargo test -- test_retry_eventual_success 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-06
+    description: "Test: timeout — slow node exceeds node_timeout, is failed with TimeoutError"
+    verify: "cargo test -- test_node_timeout 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-07
+    description: "Test: parallel execution — diamond DAG B and C start timestamps overlap"
+    verify: "cargo test -- test_parallel_execution 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-08
+    description: "Test: deadlock — graph with unsatisfied dependency (no root nodes) fails with SchedulerDeadlock"
+    verify: "cargo test -- test_deadlock 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-09
+    description: "Test: cancel — cancel mid-execution, verify running nodes stopped and state is Cancelled"
+    verify: "cargo test -- test_cancel 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-10
+    description: "Test: panic — skill panics during execution, engine catches panic, marks node Failed"
+    verify: "cargo test -- test_panic 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-11
+    description: "Test: empty workflow — no skills registered, engine completes immediately with empty summary"
+    verify: "cargo test -- test_empty_workflow 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s15-task-12
+    description: "Test: large graph — 1000 nodes, 5000 edges, engine completes within reasonable time"
+    verify: "cargo test -- test_large_graph 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started

@@ -1,0 +1,41 @@
+# e01s14 Observability — full event emission at correct lifecycle points
+# Step 14 of Phase 1
+
+story_id: e01s14
+title: "Observability — full event emission at correct lifecycle points"
+bcps: 3
+status: not_started
+
+description: >
+  EngineEvent variants already exist (WorkflowStarted, WorkflowCompleted,
+  SkillStarted, SkillCompleted, SkillFailed, etc.) but not all are emitted at
+  the correct lifecycle points. This story ensures every event fires at the
+  right moment: WorkflowStarted on initialize, NodeQueued when a node becomes
+  ready, NodeStarted on execution, NodeFinished/NodeFailed on completion,
+  WorkflowFinished on finalize.
+
+tasks:
+  - id: e01s14-task-01
+    description: "Add NodeQueued event variant — emitted when scheduler promotes a node from Pending to Ready"
+    verify: "grep -q 'NodeQueued' src/core/events/event_types.rs"
+    status: not_started
+
+  - id: e01s14-task-02
+    description: "Emit WorkflowStarted in engine initialize phase, WorkflowCompleted/Failed in finalize phase"
+    verify: "grep -q 'self.emit.*WorkflowStarted' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s14-task-03
+    description: "Emit NodeQueued when scheduler tick promotes nodes, NodeStarted before execution, NodeFinished/NodeFailed after"
+    verify: "grep -q 'NodeStarted' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s14-task-04
+    description: "Add EventBus to WorkflowContext so skills can emit events through ctx.event_bus.emit()"
+    verify: "grep -q 'event_bus' src/core/context/workflow_context.rs"
+    status: not_started
+
+  - id: e01s14-task-05
+    description: "Tests: subscriber receives all events in correct order for linear DAG, diamond DAG, failure, cancellation"
+    verify: "cargo test -- events 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started

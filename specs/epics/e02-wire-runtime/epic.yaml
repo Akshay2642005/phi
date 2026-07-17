@@ -1,0 +1,35 @@
+# Epic: e02 — Phase 2: Wire the Runtime
+# Connect the engine to main() and make it executeable.
+
+id: e02
+title: "Phase 2 — Wire the Runtime"
+description: >
+  Phase 1 completed the engine internals but the execution path is not wired.
+  `cargo run` builds AppContainer and logs "ready" without executing anything.
+  This epic connects everything: merge Phase 1 to main, add a CLI `run` command,
+  fix parallel task retry, expand tool skills, and prove the full ReAct loop
+  works end-to-end with a mock LLM integration test.
+
+total_bcps: 28
+
+stories:
+  - id: e02s01
+    title: "Merge Phase 1 to main"
+    bcps: 2
+    status: not_started
+  - id: e02s02
+    title: "CLI `run` command — wire RuntimePlugin, EventBus, execute goal"
+    bcps: 8
+    status: not_started
+  - id: e02s03
+    title: "Parallel task retry — fix spawned tasks to use run_with_policy"
+    bcps: 5
+    status: not_started
+  - id: e02s04
+    title: "Core tool skills — file_read, file_write, shell, calculator"
+    bcps: 8
+    status: not_started
+  - id: e02s05
+    title: "ReAct integration test — mock LLM end-to-end"
+    bcps: 5
+    status: not_started

@@ -1,0 +1,33 @@
+# Story: e02s01 — Merge Phase 1 to main
+# Release branch, update stale status docs, verify 135 tests pass, merge.
+
+story_id: e02s01
+title: "Merge Phase 1 to main"
+bcps: 2
+status: not_started
+
+tasks:
+  - id: e02s01-t001
+    description: "Update state.yaml with Phase 1 completion, active_flow = null, active_epic_id = null"
+    verify: "grep -E 'active_flow:|active_epic_id:' specs/state.yaml | head -2"
+    status: not_started
+
+  - id: e02s01-t002
+    description: "Update AGENTS.md to reflect Phase 1 complete, correct test count (135), note Phase 2 up next"
+    verify: "grep -c 'Phase 1' AGENTS.md | awk '{if($1>0) print \"OK updated\"; else print \"MISSING\"}'"
+    status: not_started
+
+  - id: e02s01-t003
+    description: "Verify clean baseline: cargo test --lib (135 pass), cargo fmt --check, cargo clippy --lib (0 warnings)"
+    verify: "cargo test --lib 2>&1 | grep -E '^(test result|ok|FAILED)' && cargo clippy --lib 2>&1 | grep -c 'warning' | awk '{if($1==0) print \"OK\"; else print \"WARNINGS: \"$1}'"
+    status: not_started
+
+  - id: e02s01-t004
+    description: "Create release branch from e01s07-workflow-context, merge to main via gh pr merge --squash"
+    verify: "git log --oneline main..HEAD | wc -l | awk '{if($1==0) print \"OK main caught up\"; else print $1\" commits ahead\"}'"
+    status: not_started
+
+  - id: e02s01-t005
+    description: "Tag the merge commit as v0.1.0 on main"
+    verify: "git tag --list 'v0.1.0' | head -1"
+    status: not_started

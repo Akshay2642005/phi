@@ -1,0 +1,39 @@
+# e01s09 Parallel execution — tokio::spawn + JoinSet for concurrent nodes
+# Step 9 of Phase 1
+
+story_id: e01s09
+title: "Parallel execution — tokio::spawn + JoinSet for concurrent nodes"
+bcps: 8
+status: not_started
+
+description: >
+  Replace sequential node execution with concurrent execution using tokio::spawn
+  + JoinSet. When multiple nodes are ready (e.g. B and C after A in a diamond DAG),
+  they execute simultaneously. Each node runs in its own task with its own
+  timeout and retry policy. Results are collected via JoinSet.
+
+tasks:
+  - id: e01s09-task-01
+    description: "Change execute_ready() to spawn each ready node via tokio::spawn, collecting JoinHandles"
+    verify: "grep -q 'tokio::spawn' src/core/workflow/engine.rs || grep -q 'JoinSet' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s09-task-02
+    description: "Collect results from JoinSet: completed nodes transition to Completed, failed nodes transition to Failed"
+    verify: "grep -q 'join_all' src/core/workflow/engine.rs || grep -q 'JoinSet::join_next' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s09-task-03
+    description: "After collecting results, re-enter scheduler.tick() so dependent nodes can become ready"
+    verify: "grep -q 'scheduler.tick' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s09-task-04
+    description: "Ensure no shared mutable data races: use Arc<RwLock<WorkflowGraph>> or channel-based state updates"
+    verify: "cargo build 2>&1 | grep -q 'Finished'"
+    status: not_started
+
+  - id: e01s09-task-05
+    description: "Tests: diamond DAG B and C run concurrently, 3-branch fan-out, concurrent failure in one branch doesn't block others"
+    verify: "cargo test -- parallel 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started

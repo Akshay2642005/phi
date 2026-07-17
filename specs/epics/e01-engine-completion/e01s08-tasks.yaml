@@ -1,0 +1,44 @@
+# e01s08 Execution loop — initialize → tick → update → finalize
+# Step 8 of Phase 1
+
+story_id: e01s08
+title: "Execution loop — initialize → tick → update → finalize"
+bcps: 5
+status: not_started
+
+description: >
+  Refactor WorkflowEngine::run() to use the proper DAG engine loop pattern:
+  initialize state → while !completed { scheduler.tick(); executor.execute_ready();
+  update node states in graph; emit events; } → finalize. The current loop is
+  single-pass sequential; this decouples graph state from execution.
+
+tasks:
+  - id: e01s08-task-01
+    description: "Refactor Engine::run() loop: pull scheduler.tick() → execute_ready() → graph transition update → emit events, in a while loop"
+    verify: "grep -q 'while.*is_complete' src/core/workflow/engine.rs && grep -q 'scheduler.tick' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s08-task-02
+    description: "Split execute_ready() out of the for-loop: iterate ready nodes, spawn execution, collect results"
+    verify: "grep -q 'fn execute_ready' src/core/workflow/engine.rs || grep -q 'execute_ready' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s08-task-03
+    description: "Add initialize (emit WorkflowStarted, set Running state) and finalize (emit WorkflowCompleted/Failed, compute summary) phases"
+    verify: "grep -q 'WorkflowStarted' src/core/workflow/engine.rs && grep -q 'WorkflowCompleted' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s08-task-04
+    description: "Update graph state after each node completes, so scheduler can promote dependent nodes"
+    verify: "grep -q 'graph.transition' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s08-task-05
+    description: "Deadlock detection in the loop: if no nodes are running and no nodes are ready, fail with SchedulerDeadlock"
+    verify: "cargo test -- deadlock 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started
+
+  - id: e01s08-task-06
+    description: "Tests: linear DAG executes A→B→C in order, diamond DAG executes A→{B,C}→D, single node, empty workflow"
+    verify: "cargo test -- engine 2>&1 | tail -5 | grep -q 'test result: ok'"
+    status: not_started

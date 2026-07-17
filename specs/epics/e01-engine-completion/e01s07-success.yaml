@@ -1,0 +1,34 @@
+# Define Success — e01s07 WorkflowContext enhancement
+# Explicit "step → verify: <cmd>" pairs for the next implementation story.
+
+story_id: e01s07
+title: "WorkflowContext — artifacts, metadata, event bus, metrics"
+
+pairs:
+  - step: "WorkflowContext stores ArtifactRef entries produced during execution"
+    verify: "grep -q 'pub artifacts:' src/core/context/workflow_context.rs && grep -q 'pub fn add_artifact' src/core/context/workflow_context.rs"
+    rationale: "Skills produce artifacts; context must track them so the summary can list outputs."
+
+  - step: "WorkflowContext carries ExecutionMetadata with LifecycleTimestamps that are updated on initialize/finalize"
+    verify: "grep -q 'execution_metadata' src/core/context/workflow_context.rs && grep -q 'ExecutionMetadata' src/core/context/workflow_context.rs"
+    rationale: "Every workflow engine tracks lifecycle timestamps for observability."
+
+  - step: "WorkflowContext holds an optional EventBus so skills can emit EngineEvents directly"
+    verify: "grep -q 'event_bus' src/core/context/workflow_context.rs"
+    rationale: "Skills need to emit events without holding a separate EventBus reference."
+
+  - step: "WorkflowContext tracks metrics: nodes_completed, nodes_failed, total_retries, elapsed_ms"
+    verify: "grep -q 'nodes_completed' src/core/context/workflow_context.rs && grep -q 'fn metrics_snapshot' src/core/context/workflow_context.rs"
+    rationale: "Runtime counters enable diagnostics and progress tracking."
+
+  - step: "WorkflowContext::new() accepts optional EventBus, wires ExecutionMetadata"
+    verify: "grep -q 'event_bus:' src/core/context/workflow_context.rs"
+    rationale: "The constructor must accept the new fields."
+
+  - step: "All existing WorkflowContext tests still pass"
+    verify: "cargo test -- workflow_context 2>&1 | tail -5 | grep -q 'test result: ok'"
+    rationale: "No regressions in existing behavior."
+
+  - step: "New tests cover artifact storage, metadata lifecycle, metrics increment"
+    verify: "cargo test -- workflow_context 2>&1 | tail -5 | grep -q 'test result: ok'"
+    rationale: "New functionality must be tested."

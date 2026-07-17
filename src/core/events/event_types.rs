@@ -107,6 +107,15 @@ pub struct ToolInvokedEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeQueuedEvent {
+    pub execution_id: ExecutionId,
+    /// The skill/node that was promoted from Pending to Ready.
+    pub skill_id: String,
+    /// Number of currently ready nodes after this promotion.
+    pub ready_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCompletedEvent {
     pub execution_id: ExecutionId,
     pub skill_id: String,
@@ -131,4 +140,5 @@ pub enum EngineEvent {
     LlmRequestCompleted(LlmRequestCompletedEvent),
     ToolInvoked(ToolInvokedEvent),
     ToolCompleted(ToolCompletedEvent),
+    NodeQueued(NodeQueuedEvent),
 }

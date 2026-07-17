@@ -88,9 +88,7 @@ pub enum NodeState {
     Running,
     Completed,
     Skipped,
-    Failed {
-        reason: String,
-    },
+    Failed { reason: String },
     Cancelled,
 }
 

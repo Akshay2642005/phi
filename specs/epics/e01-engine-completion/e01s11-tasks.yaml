@@ -1,0 +1,39 @@
+# e01s11 Timeout hierarchy — node ≤ workflow ≤ global
+# Step 11 of Phase 1
+
+story_id: e01s11
+title: "Timeout hierarchy — node ≤ workflow ≤ global"
+bcps: 5
+status: not_started
+
+description: >
+  Add a proper timeout hierarchy: each node can have a per-node timeout
+  (overrides the workflow-level default), each workflow has a workflow-level
+  timeout (bounds total execution), and a global default timeout (fallback).
+  Use tokio::time::timeout for enforcement.
+
+tasks:
+  - id: e01s11-task-01
+    description: "Add `node_timeout: Option<Duration>` and `workflow_timeout: Option<Duration>` to WorkflowExecutor"
+    verify: "grep -q 'node_timeout' src/core/workflow/execution.rs && grep -q 'workflow_timeout' src/core/workflow/execution.rs"
+    status: not_started
+
+  - id: e01s11-task-02
+    description: "Wrap skill.execute() in tokio::time::timeout(node_timeout) — if exceeded, return TimeoutError"
+    verify: "grep -q 'tokio::time::timeout' src/core/workflow/execution.rs"
+    status: not_started
+
+  - id: e01s11-task-03
+    description: "Add global default timeout to WorkflowEngine, pass to WorkflowExecutor"
+    verify: "grep -q 'global_timeout' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s11-task-04
+    description: "Wrap the entire engine loop in tokio::time::timeout(workflow_timeout)"
+    verify: "grep -q 'workflow_timeout' src/core/workflow/engine.rs"
+    status: not_started
+
+  - id: e01s11-task-05
+    description: "Tests: node timeout fires before workflow timeout, workflow timeout kills all nodes, no timeout completes normally"
+    verify: "cargo test -- timeout 2>&1 | tail -3 | grep -q 'ok'"
+    status: not_started

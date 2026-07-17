@@ -1,0 +1,7 @@
+# Vision — AI Workflow Engine
+# North star / initiative.
+
+name: "AI Workflow Engine"
+one_liner: "A generic, DAG-driven orchestration framework for building AI agent skills with a ReAct runtime."
+goal: "Provide a reusable, extensible engine for defining, scheduling, and executing DAG-based AI agent workflows with LLM-driven ReAct planning."
+success_criteria: []

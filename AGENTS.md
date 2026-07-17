@@ -1,3 +1,51 @@
+# AI Workflow Engine — OpenCode
+
+Read CONVENTIONS.md before any GitHub or git operation.
+
+## Project
+
+A generic, DAG-driven orchestration framework for building AI agent skills, with a ReAct runtime on top.
+Stack: Rust 2024 edition, cargo, tokio
+
+## Commands
+
+| Action | Command |
+| -------- | --------- |
+| Run | `cargo run` |
+| Test | `cargo test` |
+| Build | `cargo build` |
+| Lint | `cargo clippy` |
+| Format | `cargo fmt` |
+
+## Architecture
+
+Entry point → AppContainer → Plugin/SkillRegistry → WorkflowEngine (planner, scheduler, executor).
+ReAct runtime: PlannerSkill calls LLM, engine runs tool skills, loops until goal complete.
+
+## Conventions
+
+- Rust 2024 edition, single crate
+- tokio async, serde Serialize/Deserialize on all data structs
+- anyhow::Result for fallible, thiserror for error enums, async_trait for Skill<I>
+- cargo fmt (default), cargo clippy (no custom config)
+- Unit tests inline #[cfg(test)] mod tests { ... } in each module
+
+## Never
+
+- Do not directly edit .env
+- Do not refactor outside task scope
+- Do not add HTTP servers (src/api/ reserved)
+
+## Agent Rules
+
+- **Workflow Mandate:** You MUST use the bigpowers skills (e.g. `plan-work`, `develop-tdd`) to perform tasks.
+- Read specs/ before writing code.
+- All planning MUST be written to `specs/` before any code is generated.
+- Write the minimum code that solves the stated problem.
+- Run tests after every change. Show evidence before declaring done.
+
+---
+
 # AI Workflow Engine — AGENTS.md
 
 **Generated:** 2026-07-04
@@ -14,7 +62,7 @@
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
-|------|----------|-------|
+| ------ | ---------- | ------- |
 | Entry point / CLI | `src/main.rs` | Bootstraps `AppContainer`, starts tracing |
 | Application container | `src/bootstrap/container.rs` | Constructs config, Rig runtime, `LlmServiceRef` |
 | Config (env vars) | `src/setup/config.rs` | `OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` |
@@ -45,7 +93,7 @@
 ### Entry point & bootstrap
 
 | Symbol | File | Role |
-|--------|------|------|
+| -------- | ------ | ------ |
 | `main()` | `src/main.rs` | Init tracing, load `.env`, build `AppContainer` |
 | `AppContainer` | `src/bootstrap/container.rs` | Owns `AppConfig`, `RigRuntime`, `LlmServiceRef` |
 | `AppConfig` | `src/setup/config.rs` | Reads `OLLAMA_*` env vars |
@@ -54,7 +102,7 @@
 ### Core engine — `src/core/`
 
 | Layer | Key Types | File |
-|-------|-----------|------|
+| ------- | ----------- | ------ |
 | **Workflow definition** | `Workflow<I>`, `WorkflowBuilder<I>` | `workflow/definition.rs`, `workflow/builder.rs` |
 | **Workflow metadata** | `WorkflowMetadata` | `workflow/metadata.rs` |
 | **Workflow graph** | `WorkflowGraph<I>` (petgraph-backed DAG) | `workflow/graph.rs` |
@@ -80,7 +128,7 @@
 ### ReAct runtime — `src/runtime/`
 
 | Symbol | File | Role |
-|--------|------|------|
+| -------- | ------ | ------ |
 | `RuntimeInput` | `runtime/mod.rs` | Domain input: `goal: String` + optional `context` |
 | `PlannerSkill` | `runtime/planner.rs` | LLM-driven planner — decides which skills to run |
 | `PlanOutput` | `runtime/planner.rs` | JSON output from planner: reasoning, skills, complete flag |
@@ -188,7 +236,7 @@ No Makefile, no justfile, no pre-commit hooks.
 Configured via environment variables (loaded from `.env` by `dotenvy`):
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| ---------- | --------- | ------------- |
 | `OLLAMA_API_KEY` | _(required)_ | Ollama API key (`Nothing` for local) |
 | `OLLAMA_BASE_URL` | _(required)_ | e.g. `http://localhost:11434` |
 | `OLLAMA_MODEL` | _(required)_ | e.g. `llama3.2` or `qwen2.5` |
@@ -379,7 +427,7 @@ PlannerSkill::execute()
 - **`examples/basic_workflow.rs`**: Demonstrates the `Workflow::builder()` API
   only — no LLM calls, no execution, purely definition + inspection.
 - **`RuntimePlugin` not wired into `main()`**: The ReAct runtime (`PlannerSkill`
-  + `WebSearchSkill`) is defined but not connected to `AppContainer` yet.
+  - `WebSearchSkill`) is defined but not connected to `AppContainer` yet.
 - **Event bus plumbed but unused**: `EventBus` is implemented but `main()`
   does not attach it to the engine.
 - **Single-file ReAct loop**: The `WorkflowEngine::run()` DAG loop is
@@ -395,7 +443,7 @@ PlannerSkill::execute()
 ## TROUBLESHOOTING
 
 | Problem | Likely cause | Fix |
-|---------|-------------|-----|
+| --------- | ------------- | ----- |
 | `OLLAMA_API_KEY not set` | Missing `.env` file | Create `.env` with `OLLAMA_API_KEY=...`, `OLLAMA_BASE_URL=...`, `OLLAMA_MODEL=...` |
 | `connection refused` | Ollama not running | Start `ollama serve` |
 | `model not found` | Model not pulled | Run `ollama pull <model>` |
