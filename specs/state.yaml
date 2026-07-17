@@ -4,18 +4,18 @@
 session:
   active_flow: build_epic
   active_epic_id: e02
-  active_story_id: e02s01
+  active_story_id: e02s02
   step_index: 0
   mode: team-pr
 
 handoff:
-  next_skill: plan-work
-  notes: "Phase 1 (engine internals) complete - 135 tests. Phase 2 starts: wire the runtime. First step: merge Phase 1 to main, then CLI command, parallel retry fix, tool skills, ReAct integration test."
+  next_skill: kickoff-branch
+  notes: "Phase 1 merged to master (v0.1.0). Phase 2 starts with e02s02: CLI run command. Wire RuntimePlugin + EventBus into main, add console event subscriber, execute ReAct workflow from CLI goal."
 
 git:
-  branch: e01s07-workflow-context
-  sha: 9a25c18
-  clean: false
+  branch: master
+  sha: 0ee0bc8
+  clean: true
 
 workflow_mode: team-pr
 
@@ -29,5 +29,5 @@ metrics:
   bcp_per_hour: null
 
 release:
-  last_tag: null
+  last_tag: v0.1.0
   last_publish: null
