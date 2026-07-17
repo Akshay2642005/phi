@@ -2,8 +2,8 @@
 # Release index with WSJF-ordered epic list.
 
 release:
-  version: "0.2.0"          # Mirror — the real version is determined by
-  bump_hint: minor          # semantic-release at merge time.
+  version: "0.2.0" # Mirror — the real version is determined by
+  bump_hint: minor # semantic-release at merge time.
   codename: "wired-runtime"
   description: "Phase 2 — Wire the Runtime (CLI, ReAct loop, tool skills, retry fix)"
 
