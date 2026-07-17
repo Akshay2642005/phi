@@ -1,0 +1,109 @@
+# Scope — AI Workflow Engine Phase 2: Wire the Runtime
+# Written by: scope-work (planning spine step 1 of 3)
+# Date: 2026-07-17
+
+core_value: >
+  The engine becomes an executable system — `cargo run "my goal"` triggers a
+  complete ReAct loop: LLM plans, engine runs skills, results stream back.
+
+summary: >
+  Phase 1 completed the engine internals — WorkflowContext through observability
+  and comprehensive tests. Everything is in place: the DAG engine, parallel
+  execution, cancellation, timeouts, retries, diagnostics, events.
+
+  But it's all disconnected. `cargo run` builds AppContainer and logs "ready"
+  without executing anything. The RuntimePlugin (PlannerSkill + WebSearchSkill)
+  exists but is never registered. The EventBus emits into the void.
+
+  Phase 2 wires it all together. `main()` gains a CLI command that accepts a
+  goal string, wires RuntimePlugin into the engine, attaches EventBus listeners,
+  and runs a full ReAct workflow. Parallel spawned tasks get proper retry support.
+  A rich tool library gives the planner concrete actions. End-to-end integration
+  tests prove the full loop works with a mock LLM and mock tools.
+
+  At the end of Phase 2, the output is demonstrable:
+  ```
+  $ cargo run "what's the weather in Tokyo?"
+  → Planner: "I need to search the web"
+  → Engine runs web_search
+  → "The weather in Tokyo is 28°C, partly cloudy"
+  ```
+
+in_scope:
+  - "e02s01 — Merge Phase 1 to main: create release branch, update all stale
+    status docs (state.yaml, execution-status.yaml, release-plan.yaml), verify
+    135 tests pass on main, tag and merge"
+  - "e02s02 — CLI `run` command: Parse a goal string from CLI args, wire
+    RuntimePlugin into AppContainer, attach EventBus to the engine, add a
+    console subscriber that prints structured event output, execute a full
+    ReAct workflow and display the final answer"
+  - "e02s03 — Parallel task retry: Fix the spawned task path in execute_ready
+    to use run_with_policy so retry strategies apply to parallel-executed nodes"
+  - "e02s04 — Core tool skills: Add file_read, file_write, shell_command, and
+    calculator tool skills to src/tools/, each registered in RuntimePlugin"
+  - "e02s05 — ReAct integration test: Full end-to-end mock LLM + mock tools
+    proving the ReAct loop produces a correct final answer. Also add any
+    remaining edge-case tests"
+
+out_of_scope:
+  - "Phase 3 — Additional LLM providers (OpenAI, Anthropic, Groq, Gemini).
+    Reason: Only Ollama is needed for Phases 1-2 validation."
+  - "Phase 4 — Official skill library (Prompt, Chat, RAG, Memory).
+    Reason: Skills remain user-defined via Skill<I> trait."
+  - "Phase 5 — Workflow DSL (YAML/JSON/RON/TOML serialization).
+    Reason: builder API remains primary; serialization is a downstream ergonomic."
+  - "Phase 6 — Persistence / checkpointing.
+    Reason: In-memory execution is sufficient until distributed mode is needed."
+  - "Phase 7 — Scheduling (cron, webhook, queue).
+    Reason: Scheduling is a separate system on top of the engine."
+  - "Phase 8 — Distributed execution.
+    Reason: Requires a stable single-node engine first."
+  - "HTTP server / API endpoints.
+    Reason: src/api/ reserved for future use."
+  - "WebSocket streaming of execution events.
+    Reason: Console output is sufficient for Phase 2."
+  - "Human-in-the-loop / interrupt patterns.
+    Reason: Requires checkpointing (Phase 6) as prerequisite."
+  - "Dynamic plugin loading / discovery.
+    Reason: RuntimePlugin hardcodes the set; dynamic loading is future work."
+  - "WASM compilation support.
+    Reason: Not a priority."
+  - "Cargo publish.
+    Reason: API surface must stabilize through internal use."
+  - "User authentication / multi-tenant isolation.
+    Reason: Single-user CLI application."
+
+constraints:
+  - "Generic Workflow<I> design must be preserved — no ReAct-specific coupling in core"
+  - "All existing public APIs must remain backward-compatible"
+  - "petgraph must remain encapsulated behind WorkflowGraph API"
+  - "No new external crate dependencies unless essential"
+  - "No HTTP server, no WASM, no new binary targets"
+  - "#![allow(dead_code, unused)] at crate root must be preserved"
+  - "Every story must have tests"
+  - "Single crate structure preserved"
+  - "Ollama local instance assumed for real LLM calls; mock LLM for tests"
+
+success_criteria:
+  - "`cargo run \"<goal>\"` executes a full ReAct workflow and produces output"
+  - "Events are printed to console (structured, human-readable)"
+  - "Parallel spawned tasks use retry policies (retry_count > 0 in diagnostics)"
+  - "Four tool skills are registered and callable by the planner"
+  - "End-to-end ReAct integration test passes with mock LLM and mock tools"
+  - "All 135+ Phase 1 tests still pass"
+  - "cargo clippy --lib passes with zero warnings"
+  - "cargo fmt --check passes"
+
+references:
+  - "specs/product/SCOPE_LATEST.yaml — Phase 1 scope (complete)"
+  - "specs/product/VISION_LATEST.yaml — Project north star"
+  - "specs/tech-architecture/tech-stack.md — Tech stack documentation"
+  - "AGENTS.md — Codebase architecture and key types"
+
+prior_art:
+  - name: LangGraph (Python)
+    verdict: compose
+    notes: "CLI-driven agent workflow. Reference for how to structure the ReAct output."
+  - name: rig (Rust)
+    verdict: extend
+    notes: "Our LLM provider abstraction. Used via crate:rig for Ollama."

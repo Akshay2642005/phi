@@ -615,6 +615,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_comparisons)]
     use super::*;
     use crate::core::{
         skill::{Skill, SkillDefinition},

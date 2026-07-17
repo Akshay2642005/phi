@@ -1,0 +1,33 @@
+# Story: e02s05 — ReAct integration test
+# Full end-to-end mock LLM + mock tools proving the ReAct loop.
+
+story_id: e02s05
+title: "ReAct integration test — mock LLM end-to-end"
+bcps: 5
+status: not_started
+
+tasks:
+  - id: e02s05-t001
+    description: "Add MockLlmService that returns a canned sequence of PlanOutput JSON responses — first calls with skills_to_run, final call with goal_complete=true"
+    verify: "grep -q 'MockLlmService' src/core/llm/service.rs && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s05-t002
+    description: "Add MockToolSkill that records invocations and returns predictable results"
+    verify: "grep -q 'MockToolSkill' src/core/skill/mod.rs 2>/dev/null || grep -q 'mock_tool' src/ && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s05-t003
+    description: "Integration test: register PlannerSkill + MockToolSkill, run engine, verify planner called N times, tool called M times, final answer returned"
+    verify: "cargo test -- react_integration 2>&1 | grep -E '^(test result|ok|FAILED)'"
+    status: not_started
+
+  - id: e02s05-t004
+    description: "Integration test: verify event emissions during ReAct loop — SkillStarted, SkillCompleted, WorkflowStarted, WorkflowCompleted all fire"
+    verify: "cargo test -- events_emitted_in_react_loop 2>&1 | grep -E '^(test result|ok|FAILED)'"
+    status: not_started
+
+  - id: e02s05-t005
+    description: "Full test suite passes, update execution-status.yaml, update AGENTS.md test count"
+    verify: "cargo test --lib 2>&1 | grep -E '^(test result|ok|FAILED)' && grep 'e02s05: complete' specs/execution-status.yaml"
+    status: not_started

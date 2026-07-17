@@ -1,0 +1,33 @@
+# Story: e02s03 — Parallel task retry
+# Fix spawned tasks to use run_with_policy so retry strategies apply.
+
+story_id: e02s03
+title: Parallel task retry
+bcps: 5
+status: not_started
+
+tasks:
+  - id: e02s03-t001
+    description: "Refactor run_with_policy into reusable helper returning (Result, u32, ContextRef)"
+    verify: "grep -n 'fn run_with_policy' src/core/workflow/execution.rs | awk '{print}'"
+    status: not_started
+
+  - id: e02s03-t002
+    description: "Call the retry helper from spawned tasks in execute_ready instead of raw skill.execute()"
+    verify: "grep -c 'run_with_policy' src/core/workflow/engine.rs && echo 'OK retry wired' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s03-t003
+    description: "Wire RetryPolicy from executor into spawned task contexts"
+    verify: "grep -q 'retry_policy' src/core/workflow/engine.rs && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s03-t004
+    description: "Update node_diagnostics_has_retry_count test - spawned path should have retry_count > 0"
+    verify: "cargo test -- node_diagnostics_has_retry_count 2>&1 | grep -E '^(test result|ok|FAILED)'"
+    status: not_started
+
+  - id: e02s03-t005
+    description: "Full test suite passes, update execution-status.yaml"
+    verify: "cargo test --lib 2>&1 | grep -E '^(test result|ok|FAILED)' && grep 'e02s03: complete' specs/execution-status.yaml"
+    status: not_started

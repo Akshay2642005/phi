@@ -1,6 +1,6 @@
 // The engine is a generic framework — many items are intentionally unused
 // until domain workflows are registered. Suppress the noise.
-#![allow(dead_code, unused_imports)]
+#![allow(dead_code, unused_imports, unused_comparisons)]
 
 use std::sync::Arc;
 

@@ -1,90 +1,67 @@
-# Planning Context — elaborated from codebase and user roadmap
-# Written by: elaborate-spec
-# Date: 2026-07-07
+# Planning Context — Phase 2: Wire the Runtime
+# Written by: scope-work (planning spine step 1 of 3)
+# Date: 2026-07-17
 
-feature_name: "Phase 1 — Engine Completion"
+feature_name: "Phase 2 — Wire the Runtime"
 problem_statement: >
-  The AI Workflow Engine has a solid core (Workflow<I>, SkillRegistry, DAG graph,
-  planner, scheduler, executor, event bus, cancellation token) but the execution
-  path is not wired — main() only logs "ready". The ReAct runtime exists but is
-  not connected. Competitors (langgraph-rust, metalcraft, juncture, AgnosAI) have
-  proper execution loops, parallel DAG execution, checkpointing, and observability.
-  This phase finishes the engine internals so it can actually run workflows.
+  Phase 1 completed the entire engine internals — WorkflowContext, execution
+  loop, parallel execution, cancellation, timeouts, retries, diagnostics, and
+  observability — totaling 135 tests. But the engine is disconnected from the
+  application entry point. `cargo run` builds AppContainer and logs "ready"
+  without executing anything. The RuntimePlugin (PlannerSkill + WebSearchSkill)
+  exists but is never registered. The EventBus emits into the void.
+
+  Phase 2 wires it all together: CLI command, RuntimePlugin integration,
+  parallel retry fix, expanded tool skills, and end-to-end ReAct integration
+  tests. After Phase 2, `cargo run "what's the weather?"` actually works.
 
 constraints:
-  - "Stay in Phase 1 — no new features, only finish the engine internals"
-  - "Generic Workflow<I> design must be preserved — not tied to ReAct/agent use cases"
-  - "All existing public APIs must remain backward-compatible"
-  - "petgraph must remain encapsulated behind WorkflowGraph — no other module imports it"
-  - "Cargo.toml dependencies should not change (tokio, dashmap, petgraph, rig, serde, tracing)"
-  - "No HTTP server, no WASM, no new external dependencies"
+  - "Generic Workflow<I> must remain generic — no ReAct coupling in core"
+  - "All existing public APIs backward-compatible"
+  - "petgraph encapsulated behind WorkflowGraph — no other module imports it"
+  - "No new external crate dependencies unless essential"
+  - "No HTTP server, no WASM, no new binary targets"
+  - "Single crate preserved"
 
 out_of_scope:
-  - "Phase 2 — Workflow DSL (YAML/JSON/RON/TOML serialization of workflows)"
-  - "Phase 3 — Additional LLM providers beyond Ollama"
-  - "Phase 4 — Official skill library (Prompt, Chat, RAG, etc.)"
-  - "Phase 5 — Persistence and checkpointing"
-  - "Phase 6 — Scheduling (cron, webhook, queue)"
-  - "Phase 7 — OpenTelemetry and dashboard"
+  - "Phase 3 — Additional LLM providers (OpenAI, Anthropic, Groq)"
+  - "Phase 4 — Official skill library"
+  - "Phase 5 — Workflow DSL serialization"
+  - "Phase 6 — Persistence / checkpointing"
+  - "Phase 7 — Scheduling (cron, webhook, queue)"
   - "Phase 8 — Distributed execution"
-  - "Phase 9 — Cargo publish and public SDK"
+  - "HTTP server / API endpoints"
+  - "Dynamic plugin loading / discovery"
+  - "WASM compilation support"
+  - "Cargo publish"
 
 key_decisions:
-  - decision: "Phase 1 is 15 steps, 1-6 done, starting at Step 7"
-    rationale: "User provided the exact roadmap. Steps 1-6 are verified complete from codebase audit."
+  - decision: "Phase 2 has 5 stories (e02s01 through e02s05)"
+    rationale: "Each story is a vertical slice: merge, CLI, retry fix, tool skills, integration test."
 
-  - decision: "Step 7 — WorkflowContext needs artifacts, metadata, event bus, metrics"
+  - decision: "e02s01 — Merge Phase 1 to main first"
     rationale: >
-      Current context has slots, cancellation, diagnostics, variables but lacks
-      ArtifactRef storage, ExecutionMetadata lifecycle tracking, embedded EventBus,
-      and runtime metrics counters. Every workflow engine (Temporal, Prefect, Airflow)
-      has this as their shared memory for a run.
+      The branch e01s07-workflow-context has 9 commits (Phase 1 complete).
+      Merge it before layering Phase 2 code to keep history clean.
 
-  - decision: "Step 8 — Execution loop needs proper initialize → tick → update → finalize"
+  - decision: "e02s02 — CLI uses clap or manual arg parsing"
     rationale: >
-      Current engine.rs has a loop but it's single-pass sequential. The proper DAG
-      engine loop is: initialize state, while !completed { scheduler.tick(); executor
-      .execute_ready(); update node states; emit events; }, finalize.
+      Currently no CLI argument parsing. Use std::env::args for simplicity
+      to avoid adding a clap dependency. The goal is: `cargo run "goal here"`.
 
-  - decision: "Step 9 — Parallel execution via tokio::spawn + JoinSet"
+  - decision: "e02s03 — Fix spawned task retry by calling run_with_policy"
     rationale: >
-      This is where Rust outperforms Python. After a node completes, all its children
-      that become ready should run concurrently, not sequentially. Use tokio::spawn
-      per ready node and JoinSet to collect results.
+      Currently spawned tasks in execute_ready call skill.execute() directly,
+      bypassing run_with_policy. The fix wraps each spawned execution in a
+      run_with_policy call so retry/predicate/backoff apply.
 
-  - decision: "Step 10 — Cancellation via CancellationToken (already partially implemented)"
+  - decision: "e02s04 — Tool skills are sync wrappers with anyhow"
     rationale: >
-      Current CancellationToken exists in WorkflowContext but is not wired through
-      the engine loop. Ctrl+C handling via tokio::signal is needed at the application
-      level to call engine.cancel().
+      file_read, file_write, shell_command, calculator are simple skills that
+      don't need LLM access. They use std::fs, std::process, or basic math.
 
-  - decision: "Step 11 — Timeout hierarchy: Node < Workflow < Global"
+  - decision: "e02s05 — Mock LLM returns predefined PlanOutput sequence"
     rationale: >
-      Current executor has an optional timeout but no hierarchy. Need: per-node
-      timeout (overrides), per-workflow timeout (bounds total run), global default
-      (fallback). Use tokio::time::timeout.
-
-  - decision: "Step 12 — Retry engine: Linear, Exponential, Jitter"
-    rationale: >
-      Current retry policy exists but is basic (fixed backoff only). Need proper
-      RetryPolicy with Linear/Exponential/Jitter strategies, max retries, and
-      retry predicates that decide which errors are retryable.
-
-  - decision: "Step 13 — Execution diagnostics per node + workflow"
-    rationale: >
-      Need: start time, end time, duration, status, retry count, panic capture,
-      error, warnings, outputs snapshot, and resource usage for every node and
-      the overall workflow. Current ExecutionState has some but not all.
-
-  - decision: "Step 14 — Observability through event bus"
-    rationale: >
-      EventTypes already exist but many are not emitted in the engine loop. Need:
-      WorkflowStarted, NodeQueued, NodeStarted, NodeFinished, NodeFailed,
-      WorkflowFinished emitted at correct points.
-
-  - decision: "Step 15 — Comprehensive engine tests"
-    rationale: >
-      Current tests cover graph/node/state machines but not the full engine.
-      Need: diamond DAG, linear DAG, branch DAG, cycle detection, retry, timeout,
-      parallel, deadlock, cancel, panic, empty workflow, 1000 nodes, 5000 edges.
-      Integration tests that actually run WorkflowEngine::run().
+      Integration test needs deterministic planner output. A mock LlmService
+      returns a canned sequence of PlanOutput JSON responses, one per loop
+      iteration.

@@ -2,10 +2,10 @@
 # Release index with WSJF-ordered epic list.
 
 release:
-  version: "0.1.0"          # Mirror — the real version is determined by
+  version: "0.2.0"          # Mirror — the real version is determined by
   bump_hint: minor          # semantic-release at merge time.
-  codename: "engine-core"
-  description: "Phase 1 — Engine Completion (WorkflowContext through Engine Tests)"
+  codename: "wired-runtime"
+  description: "Phase 2 — Wire the Runtime (CLI, ReAct loop, tool skills, retry fix)"
 
 epics:
   - id: e01
@@ -40,3 +40,24 @@ epics:
       - id: e01s15
         title: "Engine tests — comprehensive integration tests"
         bcps: 8
+
+  - id: e02
+    title: "Phase 2 — Wire the Runtime"
+    description: "Connect the engine to main(): CLI command, RuntimePlugin wiring, parallel retry fix, expanded tool skills, and end-to-end ReAct integration tests."
+    bcps: 28
+    stories:
+      - id: e02s01
+        title: "Merge Phase 1 to main"
+        bcps: 2
+      - id: e02s02
+        title: "CLI `run` command — wire RuntimePlugin, EventBus, execute goal"
+        bcps: 8
+      - id: e02s03
+        title: "Parallel task retry — fix spawned tasks to use run_with_policy"
+        bcps: 5
+      - id: e02s04
+        title: "Core tool skills — file_read, file_write, shell, calculator"
+        bcps: 8
+      - id: e02s05
+        title: "ReAct integration test — mock LLM end-to-end"
+        bcps: 5

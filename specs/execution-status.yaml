@@ -2,13 +2,19 @@
 # Flat story/epic status. Sole source of truth for progress.
 # Updated by release-branch and build-epic.
 
-e01: in_progress
-e01s07: not_started
-e01s08: not_started
-e01s09: not_started
-e01s10: not_started
-e01s11: not_started
-e01s12: not_started
-e01s13: not_started
-e01s14: not_started
-e01s15: not_started
+e01: complete
+e01s07: complete
+e01s08: complete
+e01s09: complete
+e01s10: complete
+e01s11: complete
+e01s12: complete
+e01s13: complete
+e01s14: complete
+e01s15: complete
+e02: in_progress
+e02s01: not_started
+e02s02: not_started
+e02s03: not_started
+e02s04: not_started
+e02s05: not_started

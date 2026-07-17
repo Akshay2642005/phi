@@ -1,0 +1,43 @@
+# Story: e02s04 — Core tool skills
+# Add file_read, file_write, shell_command, calculator tool skills.
+
+story_id: e02s04
+title: Core tool skills
+bcps: 8
+status: not_started
+
+tasks:
+  - id: e02s04-t001
+    description: "Add FileReadSkill - reads file path from context, returns contents. CWD-restricted"
+    verify: "grep -q 'FileReadSkill' src/tools/file_read.rs 2>/dev/null && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s04-t002
+    description: "Add FileWriteSkill - writes content to file. CWD-restricted with path escape validation"
+    verify: "grep -q 'FileWriteSkill' src/tools/file_write.rs 2>/dev/null && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s04-t003
+    description: "Add ShellCommandSkill - executes shell command, returns stdout/stderr. Timeout enforced"
+    verify: "grep -q 'ShellCommandSkill' src/tools/shell_command.rs 2>/dev/null && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s04-t004
+    description: "Add CalculatorSkill - evaluates basic arithmetic expressions"
+    verify: "grep -q 'CalculatorSkill' src/tools/calculator.rs 2>/dev/null && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s04-t005
+    description: "Register all four skills in RuntimePlugin so planner can invoke them"
+    verify: "grep -q 'FileReadSkill' src/runtime/plugin.rs && grep -q 'FileWriteSkill' src/runtime/plugin.rs && grep -q 'ShellCommandSkill' src/runtime/plugin.rs && grep -q 'CalculatorSkill' src/runtime/plugin.rs && echo 'OK' || echo 'MISSING'"
+    status: not_started
+
+  - id: e02s04-t006
+    description: "Unit tests for each tool: happy path, error case, safety boundary"
+    verify: "cargo test -- tools:: 2>&1 | grep -E '^(test result|ok|FAILED)'"
+    status: not_started
+
+  - id: e02s04-t007
+    description: "Full test suite passes, update execution-status.yaml"
+    verify: "cargo test --lib 2>&1 | grep -E '^(test result|ok|FAILED)' && grep 'e02s04: complete' specs/execution-status.yaml"
+    status: not_started

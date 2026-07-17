@@ -15,36 +15,36 @@ stories:
   - id: e01s07
     title: "WorkflowContext — artifacts, metadata, event bus, metrics"
     bcps: 5
-    status: not_started
+    status: complete
   - id: e01s08
     title: "Execution loop — initialize → tick → update → finalize"
     bcps: 5
-    status: not_started
+    status: complete
   - id: e01s09
     title: "Parallel execution — tokio::spawn + JoinSet for concurrent nodes"
     bcps: 8
-    status: not_started
+    status: complete
   - id: e01s10
     title: "Cancellation — wire CancellationToken through engine + ctrl+c"
     bcps: 3
-    status: not_started
+    status: complete
   - id: e01s11
     title: "Timeout hierarchy — node ≤ workflow ≤ global"
     bcps: 5
-    status: not_started
+    status: complete
   - id: e01s12
     title: "Retry engine — linear, exponential, jitter strategies"
     bcps: 5
-    status: not_started
+    status: complete
   - id: e01s13
     title: "Execution diagnostics — timing, retry count, error capture"
     bcps: 3
-    status: not_started
+    status: complete
   - id: e01s14
     title: "Observability — full event emission at correct lifecycle points"
     bcps: 3
-    status: not_started
+    status: complete
   - id: e01s15
     title: "Engine tests — comprehensive integration tests"
     bcps: 8
-    status: not_started
+    status: complete
