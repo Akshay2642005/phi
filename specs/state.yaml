@@ -4,13 +4,13 @@
 session:
   active_flow: build_epic
   active_epic_id: e02
-  active_story_id: e02s04
-  step_index: 1
+  active_story_id: e02s05
+  step_index: 2
   mode: team-pr
 
 handoff:
   next_skill: kickoff-branch
-  notes: "e02s03 complete: pared task retry fixed via execute_with_retry standalone fn. Next: e02s04 - core tool skills (file_read, file_write, shell, calculator)."
+  notes: "e02s04 complete: four core tool skills added (file_read, file_write, shell_command, calculator). Next: e02s05 - ReAct integration test (mock LLM end-to-end)."
 
 git:
   branch: e02s02-cli-command

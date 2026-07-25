@@ -16,15 +16,12 @@ use crate::core::{
     skill::SkillDefinition,
 };
 use crate::runtime::{
-    RuntimeInput,
     planner::{PlannerSkill, SkillSummary},
+    RuntimeInput,
 };
 use crate::tools::{
-    calculator::CalculatorSkill,
-    file_read::FileReadSkill,
-    file_write::FileWriteSkill,
-    shell_command::ShellCommandSkill,
-    web_search::WebSearchSkill,
+    calculator::CalculatorSkill, file_read::FileReadSkill, file_write::FileWriteSkill,
+    shell_command::ShellCommandSkill, web_search::WebSearchSkill,
 };
 
 pub static METADATA: PluginMetadata = PluginMetadata {
