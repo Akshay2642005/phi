@@ -19,7 +19,13 @@ use crate::runtime::{
     RuntimeInput,
     planner::{PlannerSkill, SkillSummary},
 };
-use crate::tools::web_search::WebSearchSkill;
+use crate::tools::{
+    calculator::CalculatorSkill,
+    file_read::FileReadSkill,
+    file_write::FileWriteSkill,
+    shell_command::ShellCommandSkill,
+    web_search::WebSearchSkill,
+};
 
 pub static METADATA: PluginMetadata = PluginMetadata {
     id: "runtime",
@@ -31,10 +37,28 @@ pub static METADATA: PluginMetadata = PluginMetadata {
 pub type WorkerPlugin = RuntimePlugin;
 
 pub fn tool_skill_catalogue() -> Vec<SkillSummary> {
-    vec![SkillSummary {
-        id: crate::tools::web_search::DEFINITION.id,
-        description: crate::tools::web_search::DEFINITION.description,
-    }]
+    vec![
+        SkillSummary {
+            id: crate::tools::calculator::DEFINITION.id,
+            description: crate::tools::calculator::DEFINITION.description,
+        },
+        SkillSummary {
+            id: crate::tools::file_read::DEFINITION.id,
+            description: crate::tools::file_read::DEFINITION.description,
+        },
+        SkillSummary {
+            id: crate::tools::file_write::DEFINITION.id,
+            description: crate::tools::file_write::DEFINITION.description,
+        },
+        SkillSummary {
+            id: crate::tools::shell_command::DEFINITION.id,
+            description: crate::tools::shell_command::DEFINITION.description,
+        },
+        SkillSummary {
+            id: crate::tools::web_search::DEFINITION.id,
+            description: crate::tools::web_search::DEFINITION.description,
+        },
+    ]
 }
 
 pub struct RuntimePlugin {
@@ -55,6 +79,10 @@ impl Plugin<RuntimeInput> for RuntimePlugin {
     fn register(&self, ctx: &mut PluginContext<RuntimeInput>) {
         let catalogue = tool_skill_catalogue();
         ctx.register_skill(PlannerSkill::new(self.llm.clone(), catalogue));
+        ctx.register_skill(CalculatorSkill::new());
+        ctx.register_skill(FileReadSkill::new());
+        ctx.register_skill(FileWriteSkill::new());
+        ctx.register_skill(ShellCommandSkill::new());
         ctx.register_skill(WebSearchSkill::new());
     }
 }
