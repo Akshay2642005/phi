@@ -1198,10 +1198,7 @@ mod tests {
         engine.cancel();
 
         let result = rx.await.expect("engine task should send result");
-        assert!(
-            !matches!(result, Ok(_)),
-            "cancelled engine should not return Ok"
-        );
+        assert!(result.is_err(), "cancelled engine should not return Ok");
     }
 
     #[tokio::test]
