@@ -33,6 +33,8 @@ pub async fn fetch_ollama_secrets() -> Result<OllamaSecrets> {
     let address = std::env::var("VAULT_ADDRESS").context("VAULT_ADDRESS not set")?;
     let role_id = std::env::var("VAULT_ROLE_ID").context("VAULT_ROLE_ID not set")?;
     let secret_id = std::env::var("VAULT_SECRET_ID").context("VAULT_SECRET_ID not set")?;
+    let mount = std::env::var("VAULT_KV_MOUNT").unwrap_or_else(|_| "secrets".to_string());
+    let path = std::env::var("VAULT_SECRET_PATH").unwrap_or_else(|_| "rust-agent".to_string());
 
     let mut client = VaultClient::new(
         VaultClientSettingsBuilder::default()
@@ -50,9 +52,9 @@ pub async fn fetch_ollama_secrets() -> Result<OllamaSecrets> {
         .context("Vault AppRole login failed")?;
 
     // Read secrets from KV v2 at path "ollama".
-    let secrets: OllamaSecrets = kv2::read(&client, "secret", "ollama")
+    let secrets: OllamaSecrets = kv2::read(&client, &mount, &path)
         .await
-        .context("failed to read 'secret/ollama' from Vault")?;
+        .context("failed to read secrets from Vault")?;
 
     Ok(secrets)
 }
