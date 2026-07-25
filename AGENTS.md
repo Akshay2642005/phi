@@ -134,6 +134,8 @@ ReAct runtime: PlannerSkill calls LLM, engine runs tool skills, loops until goal
 | `PlanOutput` | `runtime/planner.rs` | JSON output from planner: reasoning, skills, complete flag |
 | `RuntimePlugin` | `runtime/plugin.rs` | Registers `PlannerSkill` + all tool skills |
 | `WorkerPlugin` | `runtime/plugin.rs` | Alias for `RuntimePlugin` |
+| **ReActRuntime** | **`runtime/react.rs`** | **Multi-step Plan→Act→Observe loop orchestrator** |
+| **ReActResult** | **`runtime/react.rs`** | **Final answer + iteration count** |
 
 ### Tools — `src/tools/`
 
@@ -181,16 +183,15 @@ tool skills to invoke to accomplish a user's goal.
 
 ### ReAct runtime loop
 
-The `PlannerSkill` implements the **Reason** half of ReAct:
+The `ReActRuntime` struct wraps `WorkflowEngine` and drives the **multi-step loop**:
 
 ```
 LOOP:
-  1. PlannerSkill calls Ollama (via LlmService::prompt_typed<PlanOutput>)
-     → LLM returns JSON: { reasoning, skills_to_run, goal_complete, final_answer }
-  2. WorkflowEngine runs only the skills in skills_to_run
-  3. Results stored in WorkflowContext.slots
-  4. Repeat from step 1
-  5. When goal_complete=true, the final_answer is returned
+  1. Run planner → PlanOutput { reasoning, skills_to_run, goal_complete, final_answer }
+  2. If goal_complete → return final_answer
+  3. Build sub-registry with only skills_to_run
+  4. Run sub-registry (tool skills write outputs to context)
+  5. Loop back to step 1
 ```
 
 ---
@@ -210,7 +211,14 @@ cargo clean                    # remove target/ directory
 cargo run --example basic_workflow   # run the workflow definition example
 ```
 
-No Makefile, no justfile, no pre-commit hooks.
+| File/Dir | Description |
+| ----------- | ------------- |
+| `docs/` | User-facing documentation |
+| `docs/index.md` | Documentation landing page |
+| `docs/architecture.md` | Architecture deep-dive |
+| `docs/getting-started.md` | Setup and configuration guide |
+| `docs/skill-development.md` | Creating custom skills guide |
+| `README.md` | Project overview, badges, quick start |
 
 ---
 
@@ -231,7 +239,18 @@ No Makefile, no justfile, no pre-commit hooks.
 
 ---
 
-## LLM CONFIGURATION
+## DOCS
+
+- `README.md` — Project overview, badges, quick start, key concepts
+- `docs/index.md` — Documentation landing page
+- `docs/architecture.md` — Architecture overview (core, runtime, tools)
+- `docs/getting-started.md` — Setup Ollama, env vars, first run
+- `docs/skill-development.md` — Creating custom skills with examples
+
+Build API docs: `cargo doc --open`
+---
+
+## CLI CONFIGURATION
 
 Configured via environment variables (loaded from `.env` by `dotenvy`):
 

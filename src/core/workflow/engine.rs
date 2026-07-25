@@ -1416,11 +1416,9 @@ mod tests {
         let diag = &result.summary.node_diagnostics[0];
         assert_eq!(diag.skill_id, "a");
         assert_eq!(diag.status, NodeState::Completed);
-        assert!(
-            diag.duration_ms >= 0,
-            "duration should be non-negative, got {}",
-            diag.duration_ms
-        );
+        // `duration_ms` is a u64, so >= 0 is always true; skip the
+        // assertion but keep the display message for context.
+        let _ = diag.duration_ms; // suppress unused-warning if any
         assert!(diag.end_time.is_some(), "end_time should be set");
         assert!(diag.error.is_none(), "no error on success");
     }
@@ -1475,9 +1473,7 @@ mod tests {
         registry.register(failing);
 
         // Use a retry policy with max_attempts=3 (retries=2).
-        let executor = WorkflowExecutor::with_retry_policy(
-            RetryPolicy::with_retries(2, None),
-        );
+        let executor = WorkflowExecutor::with_retry_policy(RetryPolicy::with_retries(2, None));
         let engine = WorkflowEngine::<()>::new().with_executor(executor);
 
         let (mut ctx, _sender) = WorkflowContext::new(());
@@ -1487,10 +1483,7 @@ mod tests {
 
         // Diagnostics should still be populated in the context with
         // a non-zero retry_count (the skill failed multiple times).
-        assert!(
-            !ctx.node_diagnostics.is_empty(),
-            "should have diagnostics"
-        );
+        assert!(!ctx.node_diagnostics.is_empty(), "should have diagnostics");
         let diag = &ctx.node_diagnostics[0];
         assert!(
             diag.retry_count > 0,
@@ -1541,10 +1534,8 @@ mod tests {
                 .contains("something went wrong"),
             "error should match skill error"
         );
-        assert!(
-            diag.duration_ms >= 0,
-            "duration should be non-negative even on failure"
-        );
+        // u64, always non-negative; assertion elided (clippy).
+        let _ = diag.duration_ms;
     }
 
     #[tokio::test]

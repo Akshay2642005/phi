@@ -25,10 +25,7 @@ pub fn resolve_safe_parent(path: &str) -> Result<PathBuf> {
     // Pre-check: reject obvious path traversal before any I/O.
     let components: Vec<&str> = path.split(['/', '\\']).collect();
     if components.contains(&"..") {
-        anyhow::bail!(
-            "path traversal denied: '{}' contains '..'",
-            path
-        );
+        anyhow::bail!("path traversal denied: '{}' contains '..'", path);
     }
 
     let cwd = std::env::current_dir().context("failed to get current directory")?;
@@ -37,9 +34,9 @@ pub fn resolve_safe_parent(path: &str) -> Result<PathBuf> {
 
     // Canonicalize the parent directory (which must exist).
     if let Some(parent) = resolved.parent() {
-        let canonical_parent = parent
-            .canonicalize()
-            .with_context(|| format!("parent of '{}' does not exist or cannot be accessed", path))?;
+        let canonical_parent = parent.canonicalize().with_context(|| {
+            format!("parent of '{}' does not exist or cannot be accessed", path)
+        })?;
 
         let canonical_parent_str = canonical_parent.to_string_lossy().to_lowercase();
         let cwd_str = cwd_canonical.to_string_lossy().to_lowercase();
@@ -63,10 +60,7 @@ pub fn resolve_safe_path(path: &str) -> Result<PathBuf> {
     // Pre-check: reject obvious path traversal before any I/O.
     let components: Vec<&str> = path.split(['/', '\\']).collect();
     if components.contains(&"..") {
-        anyhow::bail!(
-            "path traversal denied: '{}' contains '..'",
-            path
-        );
+        anyhow::bail!("path traversal denied: '{}' contains '..'", path);
     }
 
     let cwd = std::env::current_dir().context("failed to get current directory")?;

@@ -12,9 +12,8 @@ use rust_agent::{
         context::WorkflowContext,
         events::{bus::EventBus, event_types::EngineEvent},
         plugin::{Plugin, PluginContext},
-        workflow::engine::WorkflowEngine,
     },
-    runtime::{RuntimeInput, plugin::RuntimePlugin},
+    runtime::{ReActRuntime, RuntimeInput, plugin::RuntimePlugin},
 };
 
 #[tokio::main]
@@ -52,8 +51,8 @@ async fn main() -> anyhow::Result<()> {
     plugin.register(&mut plugin_ctx);
     let registry = plugin_ctx.into_registry();
 
-    // Build the workflow engine with event bus attached.
-    let engine = WorkflowEngine::<RuntimeInput>::new().with_event_bus(event_bus.clone());
+    // Build the ReAct runtime with event bus attached.
+    let runtime = ReActRuntime::<RuntimeInput>::new().with_event_bus(event_bus.clone());
 
     // Create the workflow context with the user's goal.
     let input = RuntimeInput {
@@ -104,36 +103,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Run the ReAct workflow.
     tracing::info!(%goal, "Running ReAct workflow");
-    let result = engine.run(&registry, &mut ctx).await;
+    let result = runtime.run(&registry, &mut ctx).await;
 
     match result {
-        Ok(workflow_result) => {
+        Ok(react_result) => {
+            let iterations = react_result.iterations;
             println!();
-            println!("═══ SUCCESS ═══");
-
-            // Show per-skill outcomes.
-            for outcome in &workflow_result.summary.skill_outcomes {
-                let status = if outcome.is_success() { "✓" } else { "✗" };
-                println!(
-                    "  {} {} ({}ms)",
-                    status, outcome.skill_id, outcome.elapsed_ms
-                );
-            }
-
-            // Show the final answer from the planner, if available.
-            if let Some(final_answer) = ctx.get::<String>("final_answer") {
-                println!();
-                println!("Result: {}", final_answer);
-            }
-
-            // Show diagnostics summary.
-            let summary = &workflow_result.summary;
-            println!();
-            println!(
-                "Workflow completed: {} skills, {}ms elapsed",
-                summary.skill_outcomes.len(),
-                summary.metadata.elapsed_ms,
-            );
+            println!("═══ SUCCESS ({} iterations) ═══", iterations);
+            println!("Result: {}", react_result.final_answer);
         }
         Err(e) => {
             eprintln!();

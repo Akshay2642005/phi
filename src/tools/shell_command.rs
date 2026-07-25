@@ -214,7 +214,10 @@ mod tests {
         let output = ctx
             .get::<ShellCommandOutput>(DEFINITION.id)
             .expect("output should be in context");
-        assert!(output.stdout.contains("hello_tool_skill"), "stdout should contain echo output");
+        assert!(
+            output.stdout.contains("hello_tool_skill"),
+            "stdout should contain echo output"
+        );
         assert!(output.exit_code == Some(0), "exit code should be 0");
     }
 
@@ -232,7 +235,9 @@ mod tests {
         assert!(result.is_err(), "non-existent command should fail");
         let err = format!("{}", result.unwrap_err());
         assert!(
-            err.contains("exited with code") || err.contains("failed") || err.contains("not recognized"),
+            err.contains("exited with code")
+                || err.contains("failed")
+                || err.contains("not recognized"),
             "error should mention exit code or failure: {}",
             err
         );
@@ -247,7 +252,10 @@ mod tests {
         };
         let (mut ctx, _tx) = WorkflowContext::new(input);
 
-        skill.execute(&mut ctx).await.expect("timeout should return ok with timed_out flag");
+        skill
+            .execute(&mut ctx)
+            .await
+            .expect("timeout should return ok with timed_out flag");
 
         let output = ctx
             .get::<ShellCommandOutput>(DEFINITION.id)
