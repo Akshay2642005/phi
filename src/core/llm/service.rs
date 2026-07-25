@@ -86,3 +86,56 @@ fn extract_json(text: &str) -> Result<&str> {
     }
     Err(anyhow!("no JSON object or array found in LLM response"))
 }
+
+// ---------------------------------------------------------------------------
+// Mock LLM service for integration tests
+// ---------------------------------------------------------------------------
+
+/// A mock [`LlmService`] that returns pre-configured responses in order.
+///
+/// Each call to `prompt()` pops the next response from a queue.
+/// If the queue is exhausted, it returns an error.
+#[cfg(test)]
+pub mod mock {
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+
+    use super::{LlmService, Result};
+
+    pub struct MockLlmService {
+        /// Responses to return in FIFO order.
+        responses: Mutex<Vec<String>>,
+        /// Number of times `prompt()` has been called.
+        call_count: Mutex<usize>,
+    }
+
+    impl MockLlmService {
+        pub fn new(responses: Vec<String>) -> Self {
+            Self {
+                responses: Mutex::new(responses),
+                call_count: Mutex::new(0),
+            }
+        }
+
+        /// Number of times `prompt()` has been called.
+        pub fn call_count(&self) -> usize {
+            *self.call_count.lock().unwrap()
+        }
+    }
+
+    #[async_trait]
+    impl LlmService for MockLlmService {
+        async fn prompt(&self, _prompt: &str) -> Result<String> {
+            let mut count = self.call_count.lock().unwrap();
+            *count += 1;
+            drop(count);
+
+            let mut queue = self.responses.lock().unwrap();
+            if queue.is_empty() {
+                anyhow::bail!("MockLlmService: no more responses configured");
+            }
+            Ok(queue.remove(0))
+        }
+    }
+}

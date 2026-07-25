@@ -21,8 +21,8 @@ pub struct AppContainer {
 }
 
 impl AppContainer {
-    pub fn build() -> anyhow::Result<Self> {
-        let config = AppConfig::from_env()?;
+    pub async fn build() -> anyhow::Result<Self> {
+        let config = AppConfig::from_vault().await?;
         let runtime = Arc::new(RigRuntime::new(
             config.ollama_api_key.clone(),
             config.ollama_base_url.clone(),

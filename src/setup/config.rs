@@ -1,5 +1,16 @@
-use anyhow::{Context, Result};
-use std::env;
+//! Application configuration — fetched from HashiCorp Vault.
+//!
+//! Only Vault connection parameters come from `.env`:
+//! - `VAULT_ADDRESS`
+//! - `VAULT_ROLE_ID`
+//! - `VAULT_SECRET_ID`
+//!
+//! All other secrets (Ollama API key, base URL, model) are stored in
+//! Vault KV v2 at `secret/ollama`.
+
+use anyhow::Result;
+
+use crate::setup::vault;
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -9,11 +20,13 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn from_env() -> Result<Self> {
+    /// Build configuration by authenticating to Vault and fetching secrets.
+    pub async fn from_vault() -> Result<Self> {
+        let secrets = vault::fetch_ollama_secrets().await?;
         Ok(Self {
-            ollama_api_key: env::var("OLLAMA_API_KEY").context("OLLAMA_API_KEY not set")?,
-            ollama_base_url: env::var("OLLAMA_BASE_URL").context("OLLAMA_BASE_URL not set")?,
-            ollama_model: env::var("OLLAMA_MODEL").context("OLLAMA_MODEL not set")?,
+            ollama_api_key: secrets.ollama_api_key,
+            ollama_base_url: secrets.ollama_base_url,
+            ollama_model: secrets.ollama_model,
         })
     }
 }

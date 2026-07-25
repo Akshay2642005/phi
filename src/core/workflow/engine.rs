@@ -72,8 +72,12 @@ use crate::core::{
     },
     skill::{SkillRef, SkillRegistry},
     workflow::{
-        execution::WorkflowExecutor, graph::WorkflowGraph, node::NodeState,
-        planner::WorkflowPlanner, scheduler::WorkflowScheduler, state::WorkflowState,
+        execution::{WorkflowExecutor, execute_with_retry},
+        graph::WorkflowGraph,
+        node::NodeState,
+        planner::WorkflowPlanner,
+        scheduler::WorkflowScheduler,
+        state::WorkflowState,
     },
 };
 
@@ -85,6 +89,7 @@ where
     node_id: &'static str,
     skill_result: Result<(), WorkflowError>,
     elapsed_ms: u64,
+    retry_count: u32,
     task_ctx: WorkflowContext<I>,
 }
 
@@ -428,6 +433,7 @@ where
             let input = Arc::clone(&ctx.input);
             let cancel_token = ctx.cancellation.clone();
             let node_timeout = self.executor.node_timeout;
+            let retry_policy = self.executor.retry_policy.clone();
 
             join_set.spawn(async move {
                 let skill_start = std::time::Instant::now();
@@ -437,28 +443,22 @@ where
                 // Share the parent's cancellation so skills can check it.
                 task_ctx.cancellation = cancel_token;
 
-                let task_result = if let Some(dur) = node_timeout {
-                    match tokio::time::timeout(dur, skill.execute(&mut task_ctx)).await {
-                        Ok(r) => r,
-                        Err(_elapsed) => Err(anyhow::anyhow!(
-                            "skill '{}' timed out after {} ms",
-                            node_id,
-                            dur.as_millis(),
-                        )),
-                    }
-                } else {
-                    skill.execute(&mut task_ctx).await
-                };
+                // Use the shared retry helper so spawned tasks benefit
+                // from retry strategies, back-off, and predicates.
+                let (task_result, spawned_retry_count): (anyhow::Result<()>, u32) =
+                    execute_with_retry::<I>(&retry_policy, node_timeout, &skill, &mut task_ctx)
+                        .await;
                 let elapsed_ms = skill_start.elapsed().as_millis() as u64;
 
                 tracing::debug!(
                     skill_id = %node_id,
                     elapsed_ms,
+                    spawned_retry_count,
                     result = if task_result.is_ok() { "ok" } else { "err" },
                     "Spawned task completed"
                 );
 
-                // Build per-node diagnostics.
+                // Build per-node diagnostics with actual retry count.
                 let (diag_status, diag_error) = match &task_result {
                     Ok(()) => (NodeState::Completed, None),
                     Err(e) => (
@@ -471,7 +471,7 @@ where
                 let output_keys = task_ctx.slots.keys();
                 let diag = NodeDiagnostics::new(node_id).finalize(
                     diag_status,
-                    0, // spawned tasks don't track retries yet
+                    spawned_retry_count, // actual retry count from execute_with_retry
                     diag_error,
                     Vec::new(),
                     output_keys,
@@ -486,6 +486,7 @@ where
                         source: crate::core::errors::SkillError::Unexpected(e),
                     }),
                     elapsed_ms,
+                    retry_count: spawned_retry_count,
                     task_ctx,
                 }
             });
@@ -573,7 +574,7 @@ where
                     self.emit_event(EngineEvent::SkillFailed(SkillFailedEvent {
                         execution_id,
                         skill_id: node_result.node_id.to_string(),
-                        attempts: 1u32,
+                        attempts: node_result.retry_count + 1,
                         error: error_msg.clone(),
                     }));
 
@@ -1198,10 +1199,7 @@ mod tests {
         engine.cancel();
 
         let result = rx.await.expect("engine task should send result");
-        assert!(
-            !matches!(result, Ok(_)),
-            "cancelled engine should not return Ok"
-        );
+        assert!(result.is_err(), "cancelled engine should not return Ok");
     }
 
     #[tokio::test]
@@ -1430,8 +1428,9 @@ mod tests {
     #[tokio::test]
     async fn node_diagnostics_has_retry_count() {
         // Test that retry_count is correctly propagated in diagnostics.
-        // NOTE: spawned parallel tasks currently bypass run_with_policy,
-        // so retries are 0 for this code path.
+        // Spawned tasks now use execute_with_retry which tracks actual
+        // retry count.  With default RetryPolicy::none() (max=1) and a
+        // skill that succeeds, retry_count should be 0.
         const SKILL_A: SkillDefinition = SkillDefinition {
             id: "a",
             name: "A",
@@ -1450,9 +1449,55 @@ mod tests {
             .expect("skill should succeed");
 
         let diag = &result.summary.node_diagnostics[0];
-        // In spawned-task path, retry_count is always 0 (no retries).
+        // With default policy (max=1) and a skill that succeeds on the
+        // first attempt, retry_count is 0.
         assert_eq!(diag.retry_count, 0, "retry_count should be 0");
         assert!(diag.error.is_none(), "no error on success");
+
+        // Also verify the diagnostics came from a spawned task path
+        // (engine.run uses execute_ready which spawns).
+    }
+
+    #[tokio::test]
+    async fn spawned_task_retry_count_tracked_on_failure() {
+        // Verify that retry_count > 0 when a spawned task fails and
+        // RetryPolicy allows multiple attempts.
+        const SKILL_A: SkillDefinition = SkillDefinition {
+            id: "a",
+            name: "A",
+            description: "",
+            version: "1.0.0",
+            dependencies: &[],
+        };
+
+        let failing = make_failing_skill(&SKILL_A);
+        let mut registry = SkillRegistry::new();
+        registry.register(failing);
+
+        // Use a retry policy with max_attempts=3 (retries=2).
+        let executor = WorkflowExecutor::with_retry_policy(
+            RetryPolicy::with_retries(2, None),
+        );
+        let engine = WorkflowEngine::<()>::new().with_executor(executor);
+
+        let (mut ctx, _sender) = WorkflowContext::new(());
+        let result = engine.run(&registry, &mut ctx).await;
+
+        assert!(result.is_err(), "failing skill should produce error");
+
+        // Diagnostics should still be populated in the context with
+        // a non-zero retry_count (the skill failed multiple times).
+        assert!(
+            !ctx.node_diagnostics.is_empty(),
+            "should have diagnostics"
+        );
+        let diag = &ctx.node_diagnostics[0];
+        assert!(
+            diag.retry_count > 0,
+            "retry_count should be > 0 for a failing skill with retry policy, got {}",
+            diag.retry_count
+        );
+        assert!(diag.error.is_some(), "should capture error message");
     }
 
     #[tokio::test]

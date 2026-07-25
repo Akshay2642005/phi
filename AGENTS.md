@@ -201,7 +201,7 @@ LOOP:
 cargo build                    # compile with debug profile
 cargo build --release          # compile with optimizations
 cargo run                      # build and run (requires OLLAMA_* env vars)
-cargo test                     # run all inline tests (60+ tests)
+cargo test                     # run all inline tests (154 tests)
 cargo fmt                      # format all Rust source files
 cargo clippy                   # lint all code
 cargo check                    # fast compilation check (no binary output)
@@ -397,7 +397,9 @@ PlannerSkill::execute()
 - No integration tests directory yet
 - No mocking framework yet (skills tested with real LLM or stubs)
 - Ollama integration tests: not yet gated behind a feature flag
-- Current test count: **60+ tests** across `definition.rs`, `builder.rs`,
+- Current test count: **154 tests** across all modules, including `definition.rs`, `builder.rs`,
+  `metadata.rs`, `graph.rs`, `policy.rs`, `execution.rs`, `engine.rs`,
+  `runtime`, and `tools/`
   `metadata.rs`, `graph.rs`
 
 ---

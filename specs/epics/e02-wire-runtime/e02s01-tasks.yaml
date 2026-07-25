@@ -14,17 +14,17 @@ tasks:
 
   - id: e02s01-t002
     description: "Update AGENTS.md to reflect Phase 1 complete, correct test count (135), note Phase 2 up next"
-    verify: "grep -c 'Phase 1' AGENTS.md | awk '{if($1>0) print \"OK updated\"; else print \"MISSING\"}'"
+    verify: 'grep -c ''Phase 1'' AGENTS.md | awk ''{if($1>0) print "OK updated"; else print "MISSING"}'''
     status: not_started
 
   - id: e02s01-t003
     description: "Verify clean baseline: cargo test --lib (135 pass), cargo fmt --check, cargo clippy --lib (0 warnings)"
-    verify: "cargo test --lib 2>&1 | grep -E '^(test result|ok|FAILED)' && cargo clippy --lib 2>&1 | grep -c 'warning' | awk '{if($1==0) print \"OK\"; else print \"WARNINGS: \"$1}'"
+    verify: 'cargo test --lib 2>&1 | grep -E ''^(test result|ok|FAILED)'' && cargo clippy --lib 2>&1 | grep -c ''warning'' | awk ''{if($1==0) print "OK"; else print "WARNINGS: "$1}'''
     status: not_started
 
   - id: e02s01-t004
     description: "Create release branch from e01s07-workflow-context, merge to main via gh pr merge --squash"
-    verify: "git log --oneline main..HEAD | wc -l | awk '{if($1==0) print \"OK main caught up\"; else print $1\" commits ahead\"}'"
+    verify: 'git log --oneline main..HEAD | wc -l | awk ''{if($1==0) print "OK main caught up"; else print $1" commits ahead"}'''
     status: not_started
 
   - id: e02s01-t005

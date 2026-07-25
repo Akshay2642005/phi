@@ -85,7 +85,7 @@ constraints:
   - "Ollama local instance assumed for real LLM calls; mock LLM for tests"
 
 success_criteria:
-  - "`cargo run \"<goal>\"` executes a full ReAct workflow and produces output"
+  - '`cargo run "<goal>"` executes a full ReAct workflow and produces output'
   - "Events are printed to console (structured, human-readable)"
   - "Parallel spawned tasks use retry policies (retry_count > 0 in diagnostics)"
   - "Four tool skills are registered and callable by the planner"

@@ -38,6 +38,107 @@ pub struct WorkflowExecutor {
     pub retry_policy: RetryPolicy,
 }
 
+/// Standalone retry helper that applies [`RetryPolicy`] + node_timeout.
+///
+/// Returns `(result, retry_count)`.  This is the same logic as
+/// [`WorkflowExecutor::run_with_policy`] but works without an executor
+/// reference — useful in spawned parallel tasks.
+pub async fn execute_with_retry<I>(
+    retry_policy: &RetryPolicy,
+    node_timeout: Option<Duration>,
+    skill: &SkillRef<I>,
+    ctx: &mut WorkflowContext<I>,
+) -> (anyhow::Result<()>, u32)
+where
+    I: Send + Sync + std::fmt::Debug + 'static,
+{
+    let skill_id = skill.definition().id;
+    let max = retry_policy.max_attempts.max(1);
+    let strategy = retry_policy.strategy;
+    let predicate = retry_policy.retry_predicate;
+    let backoff_cfg = &retry_policy.backoff_config;
+
+    for attempt in 1..=max {
+        let start = std::time::Instant::now();
+
+        let result = if let Some(dur) = node_timeout {
+            match tokio::time::timeout(dur, skill.execute(ctx)).await {
+                Ok(r) => r,
+                Err(_elapsed) => Err(anyhow::anyhow!(
+                    "skill '{}' timed out after {} ms (attempt {}/{})",
+                    skill_id,
+                    dur.as_millis(),
+                    attempt,
+                    max,
+                )),
+            }
+        } else {
+            skill.execute(ctx).await
+        };
+
+        match result {
+            Ok(()) => {
+                let elapsed_ms = start.elapsed().as_millis() as u64;
+                tracing::debug!(
+                    skill_id,
+                    attempt,
+                    elapsed_ms,
+                    "Skill execution attempt succeeded"
+                );
+                let retries = attempt.saturating_sub(1) as u32;
+                return (Ok(()), retries);
+            }
+            Err(e) => {
+                let elapsed_ms = start.elapsed().as_millis() as u64;
+                let error_msg = format!("{:#}", e);
+                let retries = attempt.saturating_sub(1) as u32;
+
+                if attempt >= max {
+                    tracing::error!(
+                        skill_id,
+                        attempt,
+                        max,
+                        elapsed_ms,
+                        error = %e,
+                        "Skill failed; all attempts exhausted"
+                    );
+                    return (Err(e), retries);
+                }
+
+                if !predicate(skill_id, &error_msg) {
+                    tracing::warn!(
+                        skill_id,
+                        attempt,
+                        max,
+                        elapsed_ms,
+                        error = %e,
+                        "Skill failed; non-retryable error"
+                    );
+                    return (Err(e), retries);
+                }
+
+                let delay = backoff_cfg.delay_for(attempt, strategy);
+                let delay_ms = delay.as_millis();
+                tracing::warn!(
+                    skill_id,
+                    attempt,
+                    max,
+                    elapsed_ms,
+                    backoff_ms = delay_ms,
+                    error = %e,
+                    "Skill failed; retrying"
+                );
+
+                if delay_ms > 0 {
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+    }
+
+    unreachable!("loop exits via return in all branches")
+}
+
 impl WorkflowExecutor {
     pub fn new() -> Self {
         Self {
@@ -53,6 +154,15 @@ impl WorkflowExecutor {
             node_timeout: Some(timeout),
             workflow_timeout: None,
             retry_policy: RetryPolicy::default(),
+        }
+    }
+
+    /// Create an executor with a custom retry policy.
+    pub fn with_retry_policy(policy: RetryPolicy) -> Self {
+        Self {
+            node_timeout: None,
+            workflow_timeout: None,
+            retry_policy: policy,
         }
     }
 
@@ -183,91 +293,7 @@ impl WorkflowExecutor {
     where
         I: Send + Sync + std::fmt::Debug + 'static,
     {
-        let skill_id = skill.definition().id;
-        let max = self.retry_policy.max_attempts.max(1);
-        let strategy = self.retry_policy.strategy;
-        let predicate = self.retry_policy.retry_predicate;
-        let backoff_cfg = &self.retry_policy.backoff_config;
-
-        for attempt in 1..=max {
-            let start = std::time::Instant::now();
-
-            let result = if let Some(dur) = self.node_timeout {
-                match timeout(dur, skill.execute(ctx)).await {
-                    Ok(r) => r,
-                    Err(_elapsed) => Err(anyhow::anyhow!(
-                        "skill '{}' timed out after {} ms (attempt {}/{})",
-                        skill_id,
-                        dur.as_millis(),
-                        attempt,
-                        max,
-                    )),
-                }
-            } else {
-                skill.execute(ctx).await
-            };
-
-            match result {
-                Ok(()) => {
-                    let elapsed_ms = start.elapsed().as_millis() as u64;
-                    tracing::debug!(
-                        skill_id = skill_id,
-                        attempt,
-                        elapsed_ms,
-                        "Skill execution attempt succeeded"
-                    );
-                    let retries = attempt.saturating_sub(1) as u32;
-                    return (Ok(()), retries);
-                }
-                Err(e) => {
-                    let elapsed_ms = start.elapsed().as_millis() as u64;
-                    let error_msg = format!("{:#}", e);
-                    let retries = attempt.saturating_sub(1) as u32;
-
-                    if attempt >= max {
-                        tracing::error!(
-                            skill_id = skill_id,
-                            attempt,
-                            max,
-                            elapsed_ms,
-                            error = %e,
-                            "Skill failed; all attempts exhausted"
-                        );
-                        return (Err(e), retries);
-                    }
-
-                    if !predicate(skill_id, &error_msg) {
-                        tracing::warn!(
-                            skill_id = skill_id,
-                            attempt,
-                            max,
-                            elapsed_ms,
-                            error = %e,
-                            "Skill failed; non-retryable error"
-                        );
-                        return (Err(e), retries);
-                    }
-
-                    let delay = backoff_cfg.delay_for(attempt, strategy);
-                    let delay_ms = delay.as_millis();
-                    tracing::warn!(
-                        skill_id = skill_id,
-                        attempt,
-                        max,
-                        elapsed_ms,
-                        backoff_ms = delay_ms,
-                        error = %e,
-                        "Skill failed; retrying"
-                    );
-
-                    if delay_ms > 0 {
-                        tokio::time::sleep(delay).await;
-                    }
-                }
-            }
-        }
-
-        unreachable!("loop exits via return in all branches")
+        execute_with_retry(&self.retry_policy, self.node_timeout, skill, ctx).await
     }
 }
 
