@@ -101,13 +101,7 @@ impl Skill<RuntimeInput> for CalculatorSkill {
             "Calculation complete"
         );
 
-        ctx.set(
-            DEFINITION.id,
-            CalculatorOutput {
-                expression,
-                result,
-            },
-        );
+        ctx.set(DEFINITION.id, CalculatorOutput { expression, result });
 
         Ok(())
     }
@@ -188,9 +182,7 @@ impl Lexer {
                     self.pos += 1;
                 }
                 let s: String = self.chars[start..self.pos].iter().collect();
-                let n: f64 = s
-                    .parse()
-                    .map_err(|_| anyhow!("invalid number: '{}'", s))?;
+                let n: f64 = s.parse().map_err(|_| anyhow!("invalid number: '{}'", s))?;
                 Ok(Token::Number(n))
             }
             _ => Err(anyhow!("unexpected character '{}' in expression", c)),
@@ -313,13 +305,20 @@ mod tests {
         };
         let (mut ctx, _tx) = WorkflowContext::new(input);
 
-        skill.execute(&mut ctx).await.expect("complex expression should succeed");
+        skill
+            .execute(&mut ctx)
+            .await
+            .expect("complex expression should succeed");
 
         let output = ctx
             .get::<CalculatorOutput>(DEFINITION.id)
             .expect("output should be in context");
         // (2 + 3) * 4 - 6 / 2 = 5 * 4 - 3 = 20 - 3 = 17
-        assert!((output.result - 17.0).abs() < 1e-10, "expected 17, got {}", output.result);
+        assert!(
+            (output.result - 17.0).abs() < 1e-10,
+            "expected 17, got {}",
+            output.result
+        );
     }
 
     #[tokio::test]
@@ -334,7 +333,10 @@ mod tests {
         let result = skill.execute(&mut ctx).await;
         assert!(result.is_err(), "division by zero should fail");
         let err = format!("{}", result.unwrap_err());
-        assert!(err.contains("division by zero"), "error should mention division by zero");
+        assert!(
+            err.contains("division by zero"),
+            "error should mention division by zero"
+        );
     }
 
     #[tokio::test]
@@ -346,12 +348,19 @@ mod tests {
         };
         let (mut ctx, _tx) = WorkflowContext::new(input);
 
-        skill.execute(&mut ctx).await.expect("-5 + 3 should succeed");
+        skill
+            .execute(&mut ctx)
+            .await
+            .expect("-5 + 3 should succeed");
 
         let output = ctx
             .get::<CalculatorOutput>(DEFINITION.id)
             .expect("output should be in context");
-        assert!((output.result - (-2.0)).abs() < 1e-10, "expected -2, got {}", output.result);
+        assert!(
+            (output.result - (-2.0)).abs() < 1e-10,
+            "expected -2, got {}",
+            output.result
+        );
     }
 
     #[tokio::test]
@@ -363,13 +372,20 @@ mod tests {
         };
         let (mut ctx, _tx) = WorkflowContext::new(input);
 
-        skill.execute(&mut ctx).await.expect("nested parens should succeed");
+        skill
+            .execute(&mut ctx)
+            .await
+            .expect("nested parens should succeed");
 
         let output = ctx
             .get::<CalculatorOutput>(DEFINITION.id)
             .expect("output should be in context");
         // ((2 + 3) * (4 - 1)) = 5 * 3 = 15
-        assert!((output.result - 15.0).abs() < 1e-10, "expected 15, got {}", output.result);
+        assert!(
+            (output.result - 15.0).abs() < 1e-10,
+            "expected 15, got {}",
+            output.result
+        );
     }
 
     #[tokio::test]

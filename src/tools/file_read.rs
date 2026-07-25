@@ -75,11 +75,7 @@ impl Skill<RuntimeInput> for FileReadSkill {
             bytes,
         };
 
-        tracing::info!(
-            skill = DEFINITION.id,
-            bytes,
-            "File read complete"
-        );
+        tracing::info!(skill = DEFINITION.id, bytes, "File read complete");
 
         ctx.set(DEFINITION.id, output);
         Ok(())
@@ -127,14 +123,23 @@ mod tests {
         };
         let (mut ctx, _tx) = WorkflowContext::new(input);
 
-        skill.execute(&mut ctx).await.expect("should read Cargo.toml");
+        skill
+            .execute(&mut ctx)
+            .await
+            .expect("should read Cargo.toml");
 
         let output = ctx
             .get::<FileReadOutput>(DEFINITION.id)
             .expect("output should be in context");
-        assert!(output.contents.contains("[package]"), "should contain Cargo.toml content");
+        assert!(
+            output.contents.contains("[package]"),
+            "should contain Cargo.toml content"
+        );
         assert!(output.bytes > 0, "should read non-zero bytes");
-        assert!(output.path.contains("Cargo.toml"), "path should include Cargo.toml");
+        assert!(
+            output.path.contains("Cargo.toml"),
+            "path should include Cargo.toml"
+        );
     }
 
     #[tokio::test]

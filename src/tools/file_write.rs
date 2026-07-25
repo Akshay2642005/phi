@@ -80,11 +80,7 @@ impl Skill<RuntimeInput> for FileWriteSkill {
             bytes_written: bytes,
         };
 
-        tracing::info!(
-            skill = DEFINITION.id,
-            bytes,
-            "File write complete"
-        );
+        tracing::info!(skill = DEFINITION.id, bytes, "File write complete");
 
         ctx.set(DEFINITION.id, output);
         Ok(())
@@ -104,9 +100,9 @@ fn extract_path_and_content(goal: &str) -> Result<(String, String)> {
 
     // Find the first word that looks like a file path (contains a path
     // separator, dot, or underscore).
-    let path_idx = words.iter().position(|w| {
-        w.contains('/') || w.contains('\\') || w.contains('.') || w.contains('_')
-    });
+    let path_idx = words
+        .iter()
+        .position(|w| w.contains('/') || w.contains('\\') || w.contains('.') || w.contains('_'));
 
     if let Some(idx) = path_idx {
         let path = words[idx].to_string();
@@ -128,9 +124,7 @@ mod tests {
     #[tokio::test]
     async fn writes_file_in_cwd() {
         let skill = FileWriteSkill::new();
-        let goal = format!(
-            "write _test_file_write.txt hello world from file_write skill"
-        );
+        let goal = "write _test_file_write.txt hello world from file_write skill".to_string();
         let input = RuntimeInput {
             goal: goal.clone(),
             context: None,
@@ -155,9 +149,7 @@ mod tests {
         );
 
         // Cleanup.
-        fs::remove_file("_test_file_write.txt")
-            .await
-            .ok();
+        fs::remove_file("_test_file_write.txt").await.ok();
     }
 
     #[tokio::test]

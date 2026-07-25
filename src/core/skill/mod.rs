@@ -77,6 +77,18 @@ where
         &self.skills
     }
 
+    /// Create a new registry containing only skills whose IDs are in
+    /// `ids`.  Useful for building sub-registries in the ReAct loop.
+    pub fn filter_to_ids(&self, ids: &[&str]) -> Self {
+        let mut filtered = HashMap::new();
+        for id in ids {
+            if let Some(skill) = self.skills.get(*id) {
+                filtered.insert(id.to_string(), Arc::clone(skill));
+            }
+        }
+        Self { skills: filtered }
+    }
+
     pub fn resolve_execution_order(&self) -> Result<Vec<SkillRef<I>>> {
         let mut ordered: Vec<SkillRef<I>> = Vec::new();
         let mut visited: HashSet<String> = HashSet::new();

@@ -13,8 +13,13 @@
 
 pub mod planner;
 pub mod plugin;
+pub mod react;
 
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+
+pub use react::ReActRuntime;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeInput {
     pub goal: String,
     pub context: Option<String>,
@@ -24,8 +29,8 @@ pub type WorkerInput = RuntimeInput;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use async_trait::async_trait;
 
@@ -36,14 +41,14 @@ mod tests {
             EngineEvent, SkillCompletedEvent, SkillStartedEvent, WorkflowCompletedEvent,
             WorkflowStartedEvent,
         },
-        llm::service::mock::MockLlmService,
         llm::LlmServiceRef,
+        llm::service::mock::MockLlmService,
         skill::{Skill, SkillDefinition, SkillRegistry},
         workflow::engine::WorkflowEngine,
     };
     use crate::runtime::{
+        ReActRuntime, RuntimeInput,
         planner::{PlannerSkill, SkillSummary},
-        RuntimeInput,
     };
 
     // ── Mock tool skill ───────────────────────────────────────────────
@@ -63,9 +68,12 @@ mod tests {
     impl MockToolSkill {
         fn new() -> (Self, Arc<AtomicUsize>) {
             let count = Arc::new(AtomicUsize::new(0));
-            (Self {
-                invoke_count: Arc::clone(&count),
-            }, count)
+            (
+                Self {
+                    invoke_count: Arc::clone(&count),
+                },
+                count,
+            )
         }
     }
 
@@ -78,10 +86,7 @@ mod tests {
         async fn execute(&self, ctx: &mut WorkflowContext<RuntimeInput>) -> anyhow::Result<()> {
             self.invoke_count.fetch_add(1, Ordering::SeqCst);
             let input = &ctx.input;
-            ctx.set(
-                MOCK_TOOL_DEF.id,
-                format!("processed goal: {}", input.goal),
-            );
+            ctx.set(MOCK_TOOL_DEF.id, format!("processed goal: {}", input.goal));
             Ok(())
         }
     }
@@ -115,14 +120,12 @@ mod tests {
         // pass.  The planner writes PlanOutput to context; tools run
         // concurrently (no deps).  This test verifies the full pipeline:
         // LLM → parse → skill execution → context slots.
-        let responses = vec![
-            build_plan_json(
-                "Need to run mock_tool first",
-                &["mock_tool"],
-                true,
-                Some("Final result: 42"),
-            ),
-        ];
+        let responses = vec![build_plan_json(
+            "Need to run mock_tool first",
+            &["mock_tool"],
+            true,
+            Some("Final result: 42"),
+        )];
 
         let mock_llm = Arc::new(MockLlmService::new(responses));
         let llm_ref: LlmServiceRef = mock_llm.clone();
@@ -162,10 +165,7 @@ mod tests {
         let plan_output = ctx
             .get::<crate::runtime::planner::PlanOutput>("plan")
             .expect("plan output should exist");
-        assert!(
-            plan_output.goal_complete,
-            "plan should mark complete"
-        );
+        assert!(plan_output.goal_complete, "plan should mark complete");
         assert_eq!(
             plan_output.final_answer.as_deref(),
             Some("Final result: 42"),
@@ -177,14 +177,12 @@ mod tests {
     async fn events_emitted_in_react_loop() {
         // Verify that a single-pass ReAct workflow emits the expected
         // lifecycle events on the EventBus.
-        let responses = vec![
-            build_plan_json(
-                "Need to run mock_tool first",
-                &["mock_tool"],
-                true,
-                Some("done"),
-            ),
-        ];
+        let responses = vec![build_plan_json(
+            "Need to run mock_tool first",
+            &["mock_tool"],
+            true,
+            Some("done"),
+        )];
 
         let mock_llm = Arc::new(MockLlmService::new(responses));
         let llm_ref: LlmServiceRef = mock_llm.clone();
@@ -214,24 +212,19 @@ mod tests {
         // Collect events while running.
         let events_handle = tokio::spawn(async move {
             let mut events: Vec<String> = Vec::new();
-            use tokio::time::{timeout, Duration};
-            loop {
-                match timeout(Duration::from_secs(2), rx.recv()).await {
-                    Ok(Ok(event)) => {
-                        let name = match &event {
-                            EngineEvent::WorkflowStarted(_) => "WorkflowStarted",
-                            EngineEvent::ExecutionPlanBuilt(_) => "ExecutionPlanBuilt",
-                            EngineEvent::SkillStarted(_) => "SkillStarted",
-                            EngineEvent::SkillCompleted(_) => "SkillCompleted",
-                            EngineEvent::WorkflowCompleted(_) => "WorkflowCompleted",
-                            _ => continue,
-                        };
-                        events.push(name.to_string());
-                        if matches!(event, EngineEvent::WorkflowCompleted(_)) {
-                            break;
-                        }
-                    }
-                    _ => break,
+            use tokio::time::{Duration, timeout};
+            while let Ok(Ok(event)) = timeout(Duration::from_secs(2), rx.recv()).await {
+                let name = match &event {
+                    EngineEvent::WorkflowStarted(_) => "WorkflowStarted",
+                    EngineEvent::ExecutionPlanBuilt(_) => "ExecutionPlanBuilt",
+                    EngineEvent::SkillStarted(_) => "SkillStarted",
+                    EngineEvent::SkillCompleted(_) => "SkillCompleted",
+                    EngineEvent::WorkflowCompleted(_) => "WorkflowCompleted",
+                    _ => continue,
+                };
+                events.push(name.to_string());
+                if matches!(event, EngineEvent::WorkflowCompleted(_)) {
+                    break;
                 }
             }
             events
@@ -267,6 +260,268 @@ mod tests {
             events.contains(&"ExecutionPlanBuilt".to_string()),
             "should emit ExecutionPlanBuilt, got: {:?}",
             events
+        );
+    }
+
+    // ── ReActRuntime multi-step tests ────────────────────────────────
+
+    #[tokio::test]
+    async fn react_runtime_completes_in_one_step() {
+        // Planner completes immediately with goal_complete=true.
+        let responses = vec![build_plan_json(
+            "Already know the answer",
+            &[],
+            true,
+            Some("42"),
+        )];
+        let mock_llm = Arc::new(MockLlmService::new(responses));
+        let llm_ref: LlmServiceRef = mock_llm.clone();
+
+        let catalogue = vec![];
+        let planner = PlannerSkill::new(llm_ref, catalogue);
+
+        let mut registry = SkillRegistry::new();
+        registry.register(planner);
+
+        let runtime = ReActRuntime::<RuntimeInput>::new();
+        let (mut ctx, _tx) = WorkflowContext::new(RuntimeInput {
+            goal: "the meaning of life".to_string(),
+            context: None,
+        });
+
+        let result = runtime.run(&registry, &mut ctx).await;
+        assert!(result.is_ok(), "react runtime should succeed");
+        let react_result = result.unwrap();
+        assert_eq!(react_result.iterations, 1, "one iteration");
+        assert_eq!(react_result.final_answer, "42", "correct answer");
+    }
+
+    #[tokio::test]
+    async fn react_runtime_multi_step_loop() {
+        // Planner: run mock_tool → Planner again: complete.
+        let responses = vec![
+            build_plan_json("Need to run mock_tool", &["mock_tool"], false, None),
+            build_plan_json(
+                "Got the result, now complete",
+                &[],
+                true,
+                Some("final answer after tool"),
+            ),
+        ];
+        let mock_llm = Arc::new(MockLlmService::new(responses));
+        let llm_ref: LlmServiceRef = mock_llm.clone();
+
+        let (tool_skill, tool_count) = MockToolSkill::new();
+
+        let catalogue = vec![SkillSummary {
+            id: MOCK_TOOL_DEF.id,
+            description: MOCK_TOOL_DEF.description,
+        }];
+        let planner = PlannerSkill::new(llm_ref, catalogue);
+
+        let mut registry = SkillRegistry::new();
+        registry.register(planner);
+        registry.register(Arc::new(tool_skill));
+
+        let runtime = ReActRuntime::<RuntimeInput>::new();
+        let (mut ctx, _tx) = WorkflowContext::new(RuntimeInput {
+            goal: "multi-step test".to_string(),
+            context: None,
+        });
+
+        let result = runtime.run(&registry, &mut ctx).await;
+        assert!(result.is_ok(), "react runtime should succeed");
+        let react_result = result.unwrap();
+        assert_eq!(react_result.iterations, 2, "two iterations");
+        assert_eq!(
+            react_result.final_answer, "final answer after tool",
+            "correct final answer"
+        );
+        assert_eq!(tool_count.load(Ordering::SeqCst), 1, "tool called once");
+        assert_eq!(mock_llm.call_count(), 2, "planner called twice");
+    }
+
+    #[tokio::test]
+    async fn react_runtime_multi_step_two_tool_runs() {
+        // Planner: run mock_tool → mut run mock_tool again → complete.
+        // This exercises the loop running three engine passes:
+        // planner, tools, planner, tools, planner (complete).
+        let responses = vec![
+            build_plan_json("First tool run", &["mock_tool"], false, None),
+            build_plan_json("Second tool run", &["mock_tool"], false, None),
+            build_plan_json(
+                "Got both results, complete",
+                &[],
+                true,
+                Some("done with two tool runs"),
+            ),
+        ];
+        let mock_llm = Arc::new(MockLlmService::new(responses));
+        let llm_ref: LlmServiceRef = mock_llm.clone();
+
+        let (tool_skill, tool_count) = MockToolSkill::new();
+
+        let catalogue = vec![SkillSummary {
+            id: MOCK_TOOL_DEF.id,
+            description: MOCK_TOOL_DEF.description,
+        }];
+        let planner = PlannerSkill::new(llm_ref, catalogue);
+
+        let mut registry = SkillRegistry::new();
+        registry.register(planner);
+        registry.register(Arc::new(tool_skill));
+
+        let runtime = ReActRuntime::<RuntimeInput>::new();
+        let (mut ctx, _tx) = WorkflowContext::new(RuntimeInput {
+            goal: "two-tool-run test".to_string(),
+            context: None,
+        });
+
+        let result = runtime.run(&registry, &mut ctx).await;
+        assert!(result.is_ok(), "react runtime should succeed");
+        let react_result = result.unwrap();
+        assert_eq!(react_result.iterations, 3, "three iterations");
+        assert_eq!(
+            react_result.final_answer, "done with two tool runs",
+            "correct final answer"
+        );
+        assert_eq!(tool_count.load(Ordering::SeqCst), 2, "tool called twice");
+        assert_eq!(mock_llm.call_count(), 3, "planner called three times");
+    }
+
+    #[tokio::test]
+    async fn react_runtime_events_emitted_multi_step() {
+        // Verify that EventBus receives lifecycle events across
+        // multiple ReAct iterations.
+        let responses = vec![
+            build_plan_json("First step", &["mock_tool"], false, None),
+            build_plan_json("Done", &[], true, Some("multi-step with events")),
+        ];
+        let mock_llm = Arc::new(MockLlmService::new(responses));
+        let llm_ref: LlmServiceRef = mock_llm.clone();
+
+        let (tool_skill, _tool_count) = MockToolSkill::new();
+        let catalogue = vec![SkillSummary {
+            id: MOCK_TOOL_DEF.id,
+            description: MOCK_TOOL_DEF.description,
+        }];
+        let planner = PlannerSkill::new(llm_ref, catalogue);
+
+        let mut registry = SkillRegistry::new();
+        registry.register(planner);
+        registry.register(Arc::new(tool_skill));
+
+        let bus = EventBus::new(64);
+        let mut rx = bus.subscribe();
+
+        let runtime = ReActRuntime::<RuntimeInput>::new().with_event_bus(bus);
+        let (mut ctx, _tx) = WorkflowContext::new(RuntimeInput {
+            goal: "multi-step events".to_string(),
+            context: None,
+        });
+
+        // Collect events while running.
+        let events_handle = tokio::spawn(async move {
+            let mut events: Vec<String> = Vec::new();
+            let mut workflow_completed_count = 0usize;
+            use tokio::time::{Duration, timeout};
+            #[allow(clippy::while_let_loop)]
+            // Complex condition needs loop+match, not while-let.
+            loop {
+                match timeout(Duration::from_secs(3), rx.recv()).await {
+                    Ok(Ok(event)) => {
+                        let name = match &event {
+                            EngineEvent::WorkflowStarted(_) => "WorkflowStarted",
+                            EngineEvent::ExecutionPlanBuilt(_) => "ExecutionPlanBuilt",
+                            EngineEvent::SkillStarted(_) => "SkillStarted",
+                            EngineEvent::SkillCompleted(_) => "SkillCompleted",
+                            EngineEvent::WorkflowCompleted(_) => "WorkflowCompleted",
+                            _ => continue,
+                        };
+                        events.push(name.to_string());
+                        if matches!(event, EngineEvent::WorkflowCompleted(_)) {
+                            workflow_completed_count += 1;
+                            if workflow_completed_count >= 2 {
+                                break;
+                            }
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            events
+        });
+
+        let result = runtime.run(&registry, &mut ctx).await;
+        assert!(result.is_ok(), "react runtime should succeed");
+        let react_result = result.unwrap();
+        assert_eq!(react_result.iterations, 2, "two iterations");
+
+        let events = events_handle.await.expect("events task completed");
+        assert!(
+            events.contains(&"WorkflowStarted".to_string()),
+            "should emit WorkflowStarted, got: {:?}",
+            events
+        );
+        assert!(
+            events.contains(&"WorkflowCompleted".to_string()),
+            "should emit WorkflowCompleted, got: {:?}",
+            events
+        );
+    }
+
+    #[tokio::test]
+    async fn react_runtime_missing_planner_returns_error() {
+        // Registry without a "plan" skill should fail immediately.
+        let registry = SkillRegistry::<RuntimeInput>::new();
+        let runtime = ReActRuntime::<RuntimeInput>::new();
+        let (mut ctx, _tx) = WorkflowContext::new(RuntimeInput {
+            goal: "no planner".to_string(),
+            context: None,
+        });
+
+        let result = runtime.run(&registry, &mut ctx).await;
+        assert!(result.is_err(), "should fail with missing planner");
+        let err = result.unwrap_err();
+        let err_str = format!("{:#}", err);
+        assert!(
+            err_str.contains("no planner skill"),
+            "error should mention missing planner, got: {}",
+            err_str
+        );
+    }
+
+    #[tokio::test]
+    async fn react_runtime_empty_skills_to_run_without_complete() {
+        // Planner says goal_complete=false but skills_to_run is empty.
+        let responses = vec![build_plan_json(
+            "No skills needed but not done?",
+            &[],
+            false,
+            None,
+        )];
+        let mock_llm = Arc::new(MockLlmService::new(responses));
+        let llm_ref: LlmServiceRef = mock_llm.clone();
+
+        let catalogue = vec![];
+        let planner = PlannerSkill::new(llm_ref, catalogue);
+
+        let mut registry = SkillRegistry::new();
+        registry.register(planner);
+
+        let runtime = ReActRuntime::<RuntimeInput>::new();
+        let (mut ctx, _tx) = WorkflowContext::new(RuntimeInput {
+            goal: "ambiguous".to_string(),
+            context: None,
+        });
+
+        let result = runtime.run(&registry, &mut ctx).await;
+        assert!(result.is_ok(), "should return a fallback answer");
+        let react_result = result.unwrap();
+        assert_eq!(react_result.iterations, 1, "one iteration");
+        assert!(
+            react_result.final_answer.contains("No skills to run"),
+            "should mention empty skills"
         );
     }
 }
