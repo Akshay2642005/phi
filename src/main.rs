@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     let event_bus = EventBus::new(256);
 
     // Build the application container (config, Ollama runtime, LLM service).
-    let container = Arc::new(AppContainer::build()?);
+    let container = Arc::new(AppContainer::build().await?);
     tracing::info!(
         model = %container.runtime.model,
         endpoint = %container.config.ollama_base_url,
