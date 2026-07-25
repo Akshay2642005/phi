@@ -83,8 +83,13 @@ impl Skill<RuntimeInput> for CalculatorSkill {
     }
 
     async fn execute(&self, ctx: &mut WorkflowContext<RuntimeInput>) -> Result<()> {
-        let goal = &ctx.input.goal;
-        let expression = extract_expression(goal)?;
+        // Check for pre-populated input from planner via skill_parameters.
+        let input_src = ctx
+            .get::<String>(DEFINITION.id)
+            .map(|s| s.as_ref().clone())
+            .unwrap_or_else(|| ctx.input.goal.clone());
+
+        let expression = extract_expression(&input_src)?;
 
         tracing::info!(
             skill = DEFINITION.id,
@@ -101,7 +106,14 @@ impl Skill<RuntimeInput> for CalculatorSkill {
             "Calculation complete"
         );
 
-        ctx.set(DEFINITION.id, CalculatorOutput { expression, result });
+        ctx.set_with_display(
+            DEFINITION.id,
+            CalculatorOutput {
+                expression: expression.clone(),
+                result,
+            },
+            format!("{} = {}", expression, result),
+        );
 
         Ok(())
     }

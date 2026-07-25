@@ -109,7 +109,11 @@ async fn main() -> anyhow::Result<()> {
         Ok(react_result) => {
             let iterations = react_result.iterations;
             println!();
-            println!("═══ SUCCESS ({} iterations) ═══", iterations);
+            if react_result.max_reached {
+                println!("═══ INCOMPLETE (max {} iterations reached) ═══", iterations);
+            } else {
+                println!("═══ SUCCESS ({} iterations) ═══", iterations);
+            }
             println!("Result: {}", react_result.final_answer);
         }
         Err(e) => {

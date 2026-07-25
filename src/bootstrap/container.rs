@@ -22,7 +22,17 @@ pub struct AppContainer {
 
 impl AppContainer {
     pub async fn build() -> anyhow::Result<Self> {
-        let config = AppConfig::from_vault().await?;
+        // Try Vault-backed config first, fall back to direct env vars.
+        let config = match AppConfig::from_vault().await {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Vault config failed — falling back to direct env vars"
+                );
+                AppConfig::from_env()?
+            }
+        };
         let runtime = Arc::new(RigRuntime::new(
             config.ollama_api_key.clone(),
             config.ollama_base_url.clone(),

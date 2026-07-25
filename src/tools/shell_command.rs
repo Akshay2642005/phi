@@ -104,8 +104,11 @@ impl Skill<RuntimeInput> for ShellCommandSkill {
     }
 
     async fn execute(&self, ctx: &mut WorkflowContext<RuntimeInput>) -> Result<()> {
-        let goal = &ctx.input.goal;
-        let command = extract_command(goal)?;
+        let input_src = ctx
+            .get::<String>(DEFINITION.id)
+            .map(|s| s.as_ref().clone())
+            .unwrap_or_else(|| ctx.input.goal.clone());
+        let command = extract_command(&input_src)?;
 
         tracing::info!(
             skill = DEFINITION.id,

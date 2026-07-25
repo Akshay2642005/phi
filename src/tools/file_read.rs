@@ -51,8 +51,11 @@ impl Skill<RuntimeInput> for FileReadSkill {
     }
 
     async fn execute(&self, ctx: &mut WorkflowContext<RuntimeInput>) -> Result<()> {
-        let goal = &ctx.input.goal;
-        let path = extract_path(goal)?;
+        let input_src = ctx
+            .get::<String>(DEFINITION.id)
+            .map(|s| s.as_ref().clone())
+            .unwrap_or_else(|| ctx.input.goal.clone());
+        let path = extract_path(&input_src)?;
 
         // CWD restriction — reject path traversal outside current directory.
         let safe_path = super::resolve_safe_path(&path)?;

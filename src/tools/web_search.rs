@@ -125,13 +125,16 @@ impl Skill<RuntimeInput> for WebSearchSkill {
     }
 
     async fn execute(&self, ctx: &mut WorkflowContext<RuntimeInput>) -> Result<()> {
-        let query = &ctx.input.goal;
+        let query = ctx
+            .get::<String>(DEFINITION.id)
+            .map(|s| s.as_ref().clone())
+            .unwrap_or_else(|| ctx.input.goal.clone());
 
         tracing::info!(skill = DEFINITION.id, query = %query, "Searching the web");
 
         let url = format!(
             "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1",
-            urlencoding(query)
+            urlencoding(&query)
         );
 
         let resp = self
@@ -172,7 +175,22 @@ impl Skill<RuntimeInput> for WebSearchSkill {
             "Web search complete"
         );
 
-        ctx.set(DEFINITION.id, output);
+        let display = if !output.abstract_text.is_empty() {
+            format!(
+                "web_search for '{}': found abstract from {}",
+                output.query, output.abstract_source
+            )
+        } else if !output.related.is_empty() {
+            format!(
+                "web_search for '{}': found {} related results",
+                output.query,
+                output.related.len()
+            )
+        } else {
+            format!("web_search for '{}': no results", output.query)
+        };
+
+        ctx.set_with_display(DEFINITION.id, output, display);
         Ok(())
     }
 }

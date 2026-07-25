@@ -99,6 +99,27 @@ impl SlotMap {
         Arc::clone(&entry.value).downcast::<T>().ok()
     }
 
+    /// Copy all entries from another SlotMap into this one.
+    /// Existing entries with the same key are overwritten.
+    pub fn copy_from(&self, other: &SlotMap) {
+        for entry in other.0.iter() {
+            self.0.insert(
+                entry.key().clone(),
+                SlotEntry {
+                    type_id: entry.type_id,
+                    value: Arc::clone(&entry.value),
+                },
+            );
+        }
+    }
+
+    /// Clone all entries into a new independent SlotMap.
+    pub fn clone_entries(&self) -> SlotMap {
+        let new = SlotMap::default();
+        new.copy_from(self);
+        new
+    }
+
     pub fn contains(&self, key: &str) -> bool {
         self.0.contains_key(key)
     }
@@ -195,6 +216,9 @@ where
     pub completed_skills: Vec<String>,
     pub failed_skills: Vec<String>,
     pub variables: DashMap<String, String>,
+    /// Human-readable display strings for context slot values.
+    /// Keyed by slot key — used by the planner to see tool outputs.
+    pub slot_displays: DashMap<String, String>,
     pub cancellation: CancellationToken,
     pub diagnostics: Vec<WorkflowDiagnostic>,
     /// Artifacts produced by skills during workflow execution.
@@ -233,6 +257,7 @@ where
             completed_skills: Vec::new(),
             failed_skills: Vec::new(),
             variables: DashMap::new(),
+            slot_displays: DashMap::new(),
             cancellation: token,
             diagnostics: Vec::new(),
             artifacts: Vec::new(),
@@ -268,6 +293,7 @@ where
             completed_skills: Vec::new(),
             failed_skills: Vec::new(),
             variables: DashMap::new(),
+            slot_displays: DashMap::new(),
             cancellation: token,
             diagnostics: Vec::new(),
             artifacts: Vec::new(),
@@ -299,6 +325,10 @@ where
     /// diagnostics without overwriting existing entries.
     pub fn absorb_task_results(&mut self, other: &Self) {
         self.slots.absorb(&other.slots);
+        for entry in other.slot_displays.iter() {
+            self.slot_displays
+                .insert(entry.key().clone(), entry.value().clone());
+        }
         self.diagnostics.extend(other.diagnostics.iter().cloned());
         self.completed_skills
             .extend(other.completed_skills.iter().cloned());
@@ -388,6 +418,19 @@ where
 
     pub fn set<T: Send + Sync + 'static>(&self, skill_id: impl Into<String>, value: T) {
         self.slots.insert(skill_id, value);
+    }
+
+    /// Store a value and a human-readable display string for it.
+    /// Used so the planner can see tool output summaries.
+    pub fn set_with_display<T: Send + Sync + 'static>(
+        &self,
+        skill_id: impl Into<String>,
+        value: T,
+        display: impl Into<String>,
+    ) {
+        let id = skill_id.into();
+        self.slot_displays.insert(id.clone(), display.into());
+        self.slots.insert(id, value);
     }
 
     pub fn get<T: Send + Sync + 'static>(&self, skill_id: &str) -> Option<Arc<T>> {

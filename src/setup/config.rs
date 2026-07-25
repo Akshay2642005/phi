@@ -8,7 +8,7 @@
 //! All other secrets (Ollama API key, base URL, model) are stored in
 //! Vault KV v2 at `secret/ollama`.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::setup::vault;
 
@@ -27,6 +27,18 @@ impl AppConfig {
             ollama_api_key: secrets.ollama_api_key,
             ollama_base_url: secrets.ollama_base_url,
             ollama_model: secrets.ollama_model,
+        })
+    }
+
+    /// Build configuration from direct environment variables (no Vault).
+    ///
+    /// Reads `OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`
+    /// from the environment. All three are required.
+    pub fn from_env() -> Result<Self> {
+        Ok(Self {
+            ollama_api_key: std::env::var("OLLAMA_API_KEY").context("OLLAMA_API_KEY not set")?,
+            ollama_base_url: std::env::var("OLLAMA_BASE_URL").context("OLLAMA_BASE_URL not set")?,
+            ollama_model: std::env::var("OLLAMA_MODEL").context("OLLAMA_MODEL not set")?,
         })
     }
 }

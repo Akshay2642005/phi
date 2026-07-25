@@ -85,8 +85,13 @@ mod tests {
 
         async fn execute(&self, ctx: &mut WorkflowContext<RuntimeInput>) -> anyhow::Result<()> {
             self.invoke_count.fetch_add(1, Ordering::SeqCst);
-            let input = &ctx.input;
-            ctx.set(MOCK_TOOL_DEF.id, format!("processed goal: {}", input.goal));
+            // Check for pre-populated input from planner (skill_parameters).
+            let input_src = ctx
+                .get::<String>(MOCK_TOOL_DEF.id)
+                .map(|s| s.as_ref().clone())
+                .unwrap_or_else(|| ctx.input.goal.clone());
+            let processed = format!("processed: {}", input_src);
+            ctx.set_with_display(MOCK_TOOL_DEF.id, processed.clone(), processed);
             Ok(())
         }
     }
@@ -105,8 +110,34 @@ mod tests {
             None => "null".to_string(),
         };
         format!(
-            r#"{{"reasoning":"{reasoning}","skills_to_run":[{}],"goal_complete":{},"final_answer":{}}}"#,
+            r#"{{"reasoning":"{reasoning}","skills_to_run":[{}],"skill_parameters":{{}},"goal_complete":{},"final_answer":{}}}"#,
             skills_json.join(","),
+            complete,
+            answer_field,
+        )
+    }
+
+    /// Like `build_plan_json` but with per-skill parameters.
+    fn build_plan_json_with_params(
+        reasoning: &str,
+        skills: &[&str],
+        params: &[(&str, &str)],
+        complete: bool,
+        answer: Option<&str>,
+    ) -> String {
+        let skills_json: Vec<String> = skills.iter().map(|s| format!("\"{s}\"")).collect();
+        let answer_field = match answer {
+            Some(a) => format!("\"{}\"", a),
+            None => "null".to_string(),
+        };
+        let params_json: Vec<String> = params
+            .iter()
+            .map(|(k, v)| format!("\"{k}\":\"{v}\""))
+            .collect();
+        format!(
+            r#"{{"reasoning":"{reasoning}","skills_to_run":[{}],"skill_parameters":{{{}}},"goal_complete":{},"final_answer":{}}}"#,
+            skills_json.join(","),
+            params_json.join(","),
             complete,
             answer_field,
         )
@@ -332,29 +363,32 @@ mod tests {
         let result = runtime.run(&registry, &mut ctx).await;
         assert!(result.is_ok(), "react runtime should succeed");
         let react_result = result.unwrap();
-        assert_eq!(react_result.iterations, 2, "two iterations");
         assert_eq!(
-            react_result.final_answer, "final answer after tool",
-            "correct final answer"
+            react_result.iterations, 2,
+            "two iterations (plan + execute)"
+        );
+        assert!(
+            react_result
+                .final_answer
+                .contains("processed: multi-step test"),
+            "should contain tool output, got: {}",
+            react_result.final_answer
         );
         assert_eq!(tool_count.load(Ordering::SeqCst), 1, "tool called once");
-        assert_eq!(mock_llm.call_count(), 2, "planner called twice");
+        assert_eq!(
+            mock_llm.call_count(),
+            1,
+            "planner called once (no confirmation re-prompt)"
+        );
     }
 
     #[tokio::test]
     async fn react_runtime_multi_step_two_tool_runs() {
-        // Planner: run mock_tool → mut run mock_tool again → complete.
-        // This exercises the loop running three engine passes:
-        // planner, tools, planner, tools, planner (complete).
+        // Planner: run mock_tool → complete.
+        // This exercises the multi-step loop with tool execution.
         let responses = vec![
             build_plan_json("First tool run", &["mock_tool"], false, None),
-            build_plan_json("Second tool run", &["mock_tool"], false, None),
-            build_plan_json(
-                "Got both results, complete",
-                &[],
-                true,
-                Some("done with two tool runs"),
-            ),
+            build_plan_json("Tool done, complete", &[], true, Some("done with tool run")),
         ];
         let mock_llm = Arc::new(MockLlmService::new(responses));
         let llm_ref: LlmServiceRef = mock_llm.clone();
@@ -380,19 +414,29 @@ mod tests {
         let result = runtime.run(&registry, &mut ctx).await;
         assert!(result.is_ok(), "react runtime should succeed");
         let react_result = result.unwrap();
-        assert_eq!(react_result.iterations, 3, "three iterations");
         assert_eq!(
-            react_result.final_answer, "done with two tool runs",
-            "correct final answer"
+            react_result.iterations, 2,
+            "two iterations (plan + execute)"
         );
-        assert_eq!(tool_count.load(Ordering::SeqCst), 2, "tool called twice");
-        assert_eq!(mock_llm.call_count(), 3, "planner called three times");
+        assert!(
+            react_result
+                .final_answer
+                .contains("processed: two-tool-run test"),
+            "should contain tool output, got: {}",
+            react_result.final_answer
+        );
+        assert_eq!(tool_count.load(Ordering::SeqCst), 1, "tool called once");
+        assert_eq!(
+            mock_llm.call_count(),
+            1,
+            "planner called once (no confirmation re-prompt)"
+        );
     }
 
     #[tokio::test]
     async fn react_runtime_events_emitted_multi_step() {
         // Verify that EventBus receives lifecycle events across
-        // multiple ReAct iterations.
+        // plan + execute phases.
         let responses = vec![
             build_plan_json("First step", &["mock_tool"], false, None),
             build_plan_json("Done", &[], true, Some("multi-step with events")),
@@ -455,7 +499,10 @@ mod tests {
         let result = runtime.run(&registry, &mut ctx).await;
         assert!(result.is_ok(), "react runtime should succeed");
         let react_result = result.unwrap();
-        assert_eq!(react_result.iterations, 2, "two iterations");
+        assert_eq!(
+            react_result.iterations, 2,
+            "two iterations (plan + execute)"
+        );
 
         let events = events_handle.await.expect("events task completed");
         assert!(
@@ -494,6 +541,7 @@ mod tests {
     #[tokio::test]
     async fn react_runtime_empty_skills_to_run_without_complete() {
         // Planner says goal_complete=false but skills_to_run is empty.
+        // The runtime now treats this as an error (no skills to execute).
         let responses = vec![build_plan_json(
             "No skills needed but not done?",
             &[],
@@ -516,12 +564,74 @@ mod tests {
         });
 
         let result = runtime.run(&registry, &mut ctx).await;
-        assert!(result.is_ok(), "should return a fallback answer");
-        let react_result = result.unwrap();
-        assert_eq!(react_result.iterations, 1, "one iteration");
         assert!(
-            react_result.final_answer.contains("No skills to run"),
+            result.is_err(),
+            "should error when planner has no skills to run"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("no skills to run"),
             "should mention empty skills"
+        );
+    }
+
+    #[tokio::test]
+    async fn react_runtime_passes_skill_parameters_to_tools() {
+        // The planner returns skill_parameters with goal_complete=false
+        // so the ReActRuntime runs the tool with the parameter value.
+        let responses = vec![
+            build_plan_json_with_params(
+                "Need to calculate 25*4+10",
+                &["mock_tool"],
+                &[("mock_tool", "25 * 4 + 10")],
+                false,
+                None,
+            ),
+            build_plan_json("Done", &[], true, Some("110")),
+        ];
+        let mock_llm = Arc::new(MockLlmService::new(responses));
+        let llm_ref: LlmServiceRef = mock_llm.clone();
+
+        let (tool_skill, tool_count) = MockToolSkill::new();
+
+        let catalogue = vec![SkillSummary {
+            id: MOCK_TOOL_DEF.id,
+            description: MOCK_TOOL_DEF.description,
+        }];
+        let planner = PlannerSkill::new(llm_ref, catalogue);
+
+        let mut registry = SkillRegistry::new();
+        registry.register(planner);
+        registry.register(Arc::new(tool_skill));
+
+        let runtime = ReActRuntime::<RuntimeInput>::new();
+        let (mut ctx, _tx) = WorkflowContext::new(RuntimeInput {
+            goal: "calculate 25 * 4 + 10, then search".to_string(),
+            context: None,
+        });
+
+        let result = runtime.run(&registry, &mut ctx).await;
+        assert!(result.is_ok(), "should succeed");
+
+        // The tool should have been called once (iteration 1), then
+        // the planner completes (iteration 2).
+        assert_eq!(tool_count.load(Ordering::SeqCst), 1, "tool called once");
+
+        // The tool's output slot should contain the pre-populated
+        // parameter value "25 * 4 + 10", not the raw goal.
+        let slot_value = ctx
+            .get::<String>(MOCK_TOOL_DEF.id)
+            .map(|s| s.as_ref().clone())
+            .expect("tool's output slot should exist after execution");
+        assert!(
+            slot_value.contains("25 * 4 + 10"),
+            "tool should have received parameter value '25 * 4 + 10', got: {}",
+            slot_value
+        );
+        // It should NOT contain the raw goal text.
+        assert!(
+            !slot_value.contains("then search"),
+            "tool should NOT have received the full raw goal"
         );
     }
 }

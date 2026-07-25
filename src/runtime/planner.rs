@@ -11,6 +11,7 @@
 //! Slot written: `"plan"` → [`PlanOutput`]
 //! Dependencies: none (always runs first each step)
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -28,6 +29,10 @@ use crate::runtime::RuntimeInput;
 pub struct PlanOutput {
     pub reasoning: String,
     pub skills_to_run: Vec<String>,
+    /// Per-skill input extracted from the goal by the LLM.
+    /// Keyed by skill id — the runtime will pre-populate each
+    /// skill's context slot so it receives the right input.
+    pub skill_parameters: HashMap<String, String>,
     pub goal_complete: bool,
     pub final_answer: Option<String>,
 }
@@ -93,8 +98,20 @@ AVAILABLE SKILLS:
 RESULTS FROM PREVIOUS STEPS:
 {prior_results}
 
-INSTRUCTIONS:
-- Choose only the skills needed for the NEXT step (don't re-run already-completed skills).
+INSTRUCTIONS (CRITICAL):
+- List ALL skills needed to accomplish the goal, in execution order.
+  Include every step from start to finish — do not skip intermediate steps.
+- You MUST NOT re-run a skill that has ALREADY BEEN COMPLETED.
+  The completed-skills list tells you what has already been done.
+- For each skill in skills_to_run, extract the exact input that skill needs from the goal
+  into skill_parameters. The key is the skill id, the value is the input string.
+- If a later skill needs the result from an earlier skill, write "{{<skill_id>}}" as a
+  placeholder in its parameter. Example: "interesting fact about {{calculator}}".
+  The runtime will fill in the actual value.
+- WEB_SEARCH QUERY TIP: The web_search skill uses DuckDuckGo Instant Answer API which
+  only works with SHORT keyword queries (e.g. "42" or "Eiffel Tower height").
+  Do NOT write conversational phrases like "interesting fact about the number 42" —
+  they will return zero results. Write 2-5 keyword queries.
 - If the goal is already fully accomplished based on prior results, set goal_complete to true
   and write a clear final_answer.
 - Keep skills_to_run as an empty list when goal_complete is true.
@@ -104,6 +121,9 @@ Respond with this exact JSON shape:
 {{
   "reasoning": "<one sentence explaining your plan>",
   "skills_to_run": ["<skill_id>", ...],
+  "skill_parameters": {{
+    "<skill_id>": "<exact input for that skill extracted from the goal>"
+  }},
   "goal_complete": <true|false>,
   "final_answer": "<answer string, or null if not complete>"
 }}"#
@@ -130,20 +150,66 @@ fn build_prior_results_summary<I>(ctx: &WorkflowContext<I>) -> String
 where
     I: Send + Sync + std::fmt::Debug + 'static,
 {
-    if ctx.completed_skills.is_empty() {
+    if ctx.completed_skills.is_empty() && ctx.failed_skills.is_empty() {
         return "None — this is the first step.".to_string();
     }
 
     let mut lines = Vec::new();
 
     if !ctx.completed_skills.is_empty() {
-        lines.push(format!(
-            "Completed skills: {}",
-            ctx.completed_skills.join(", ")
-        ));
+        // Deduplicate while preserving insertion order.
+        let mut seen = std::collections::HashSet::new();
+        let deduped: Vec<&String> = ctx
+            .completed_skills
+            .iter()
+            .filter(|s| seen.insert(s.as_str()))
+            .collect();
+        if !deduped.is_empty() {
+            lines.push(format!(
+                "Completed skills (deduplicated): {}",
+                deduped
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
     }
     if !ctx.failed_skills.is_empty() {
-        lines.push(format!("Failed skills: {}", ctx.failed_skills.join(", ")));
+        let mut seen = std::collections::HashSet::new();
+        let deduped: Vec<&String> = ctx
+            .failed_skills
+            .iter()
+            .filter(|s| seen.insert(s.as_str()))
+            .collect();
+        if !deduped.is_empty() {
+            lines.push(format!(
+                "Failed skills: {}",
+                deduped
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    }
+
+    // Show populated slot keys so the LLM knows what data is available.
+    let slot_keys: Vec<String> = ctx.slots.keys();
+    if !slot_keys.is_empty() {
+        lines.push(format!(
+            "Available data in context slots: {}",
+            slot_keys.join(", ")
+        ));
+        // Show human-readable display values for slots that have them.
+        let mut display_lines: Vec<String> = Vec::new();
+        for entry in ctx.slot_displays.iter() {
+            display_lines.push(format!("  {}: {}", entry.key(), entry.value()));
+        }
+        if !display_lines.is_empty() {
+            lines.push("Slot values:".to_string());
+            lines.extend(display_lines);
+        }
     }
 
     for d in ctx.diagnostics.iter().take(10) {

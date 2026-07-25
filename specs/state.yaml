@@ -10,7 +10,7 @@ session:
 
 handoff:
   next_skill: kickoff-branch
-  notes: "Phase 3 (e03 — Multi-Step ReAct Loop) complete. README.md and docs/ created. ReActRuntime implemented with 6 multi-step loop tests. 160 tests, zero clippy warnings. Ready for Phase 3b, 4, or merge."
+  notes: "Bug fix: infinite ReAct loop fixed. Root cause: LLM kept selecting already-completed skills. Fix: (1) deduplicate completed_skills display, (2) runtime filters out already-completed skills before running them, (3) MAX_ITERATIONS=20 safety limit. 161 tests, zero clippy warnings."
 
 git:
   branch: master

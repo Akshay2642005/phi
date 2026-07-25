@@ -434,6 +434,10 @@ where
             let cancel_token = ctx.cancellation.clone();
             let node_timeout = self.executor.node_timeout;
             let retry_policy = self.executor.retry_policy.clone();
+            // Capture parent slots so pre-populated inputs (e.g.
+            // skill_parameters from the ReActRuntime) propagate to
+            // spawned task contexts.
+            let parent_slots = ctx.slots.clone_entries();
 
             join_set.spawn(async move {
                 let skill_start = std::time::Instant::now();
@@ -442,6 +446,9 @@ where
 
                 // Share the parent's cancellation so skills can check it.
                 task_ctx.cancellation = cancel_token;
+                // Propagate pre-populated slots from parent context
+                // (e.g. skill_parameters set by ReActRuntime).
+                task_ctx.slots.copy_from(&parent_slots);
 
                 // Use the shared retry helper so spawned tasks benefit
                 // from retry strategies, back-off, and predicates.
