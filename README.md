@@ -104,7 +104,7 @@ The **ReAct runtime** adds an LLM planner on top:
 
 | Skill | ID | Description |
 | ------- | ---- | ------------- |
-| Web Search | `web_search` | DuckDuckGo Instant Answers |
+| Web Search | `web_search` | Tavily Search API |
 | File Read | `file_read` | Read files (CWD-restricted) |
 | File Write | `file_write` | Write files (traversal-safe) |
 | Shell Command | `shell_command` | Execute shell commands (timeout) |

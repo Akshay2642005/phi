@@ -146,6 +146,6 @@ Epic IDs: `e01`, `e30`. Story IDs: `e01s01`.
 
 - **Retry with backoff** — for API/network calls (policy types in `core/workflow/policy.rs`: `RetryPolicy`)
 - **Timeout** — for long-running operations (`TimeoutPolicy`)
-- **Graceful degradation** — when external services/dependencies fail (Ollama LLM, DuckDuckGo API)
+- **Graceful degradation** — when external services/dependencies fail (Ollama LLM, Tavily API)
 
 The agent implements defensive code only for categories explicitly listed here.

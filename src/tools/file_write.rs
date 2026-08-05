@@ -92,14 +92,29 @@ impl Skill<RuntimeInput> for FileWriteSkill {
 
 /// Extract (path, content) from a goal string.
 ///
-/// Uses a simple heuristic: the first word containing path-like characters
-/// is treated as the path, and the rest is the content.  If only a path
-/// is found, content is empty.
+/// Two formats are supported:
+/// 1. `path|content`  — explicit separator (preferred; the planner is
+///    instructed to emit this form). The left side is the path, the
+///    right side is the content.
+/// 2. Whitespace heuristic — the first word containing path-like
+///    characters (`/`, `\`, `.`, `_`) is the path, the rest is content.
 fn extract_path_and_content(goal: &str) -> Result<(String, String)> {
-    let words: Vec<&str> = goal.split_whitespace().collect();
-    if words.is_empty() {
+    let goal = goal.trim();
+    if goal.is_empty() {
         return Err(anyhow!("empty goal: no path or content provided"));
     }
+
+    // Format 1: explicit `path|content` separator.
+    if let Some((path, content)) = goal.split_once('|') {
+        let path = path.trim();
+        let content = content.trim();
+        if !path.is_empty() {
+            return Ok((path.to_string(), content.to_string()));
+        }
+    }
+
+    // Format 2: whitespace heuristic.
+    let words: Vec<&str> = goal.split_whitespace().collect();
 
     // Find the first word that looks like a file path (contains a path
     // separator, dot, or underscore).
@@ -114,7 +129,7 @@ fn extract_path_and_content(goal: &str) -> Result<(String, String)> {
     } else {
         // No path-like word found; treat the whole goal as a path with
         // empty content.
-        Ok((goal.trim().to_string(), String::new()))
+        Ok((goal.to_string(), String::new()))
     }
 }
 
@@ -152,6 +167,34 @@ mod tests {
         );
 
         // Cleanup.
+        fs::remove_file("_test_file_write.txt").await.ok();
+    }
+
+    #[tokio::test]
+    async fn parses_pipe_separated_input() {
+        let skill = FileWriteSkill::new();
+        let input = RuntimeInput {
+            goal: "write _test_file_write.txt|hello world from pipe format".to_string(),
+            context: None,
+        };
+        let (mut ctx, _tx) = WorkflowContext::new(input);
+
+        skill.execute(&mut ctx).await.expect("should write file");
+
+        let output = ctx
+            .get::<FileWriteOutput>(DEFINITION.id)
+            .expect("output should be in context");
+        assert!(output.bytes_written > 0, "should write non-zero bytes");
+        assert!(output.path.contains("_test_file_write.txt"));
+
+        let contents = fs::read_to_string("_test_file_write.txt")
+            .await
+            .expect("should read back");
+        assert!(
+            contents.contains("hello world"),
+            "should contain content after the pipe"
+        );
+
         fs::remove_file("_test_file_write.txt").await.ok();
     }
 

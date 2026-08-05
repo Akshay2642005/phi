@@ -60,11 +60,15 @@ pub fn tool_skill_catalogue() -> Vec<SkillSummary> {
 
 pub struct RuntimePlugin {
     llm: LlmServiceRef,
+    tavily_api_key: String,
 }
 
 impl RuntimePlugin {
-    pub fn new(llm: LlmServiceRef) -> Self {
-        Self { llm }
+    pub fn new(llm: LlmServiceRef, tavily_api_key: String) -> Self {
+        Self {
+            llm,
+            tavily_api_key,
+        }
     }
 }
 
@@ -80,6 +84,6 @@ impl Plugin<RuntimeInput> for RuntimePlugin {
         ctx.register_skill(FileReadSkill::new());
         ctx.register_skill(FileWriteSkill::new());
         ctx.register_skill(ShellCommandSkill::new());
-        ctx.register_skill(WebSearchSkill::new());
+        ctx.register_skill(WebSearchSkill::new(self.tavily_api_key.clone()));
     }
 }

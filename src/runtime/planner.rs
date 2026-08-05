@@ -108,10 +108,13 @@ INSTRUCTIONS (CRITICAL):
 - If a later skill needs the result from an earlier skill, write "{{<skill_id>}}" as a
   placeholder in its parameter. Example: "interesting fact about {{calculator}}".
   The runtime will fill in the actual value.
-- WEB_SEARCH QUERY TIP: The web_search skill uses DuckDuckGo Instant Answer API which
-  only works with SHORT keyword queries (e.g. "42" or "Eiffel Tower height").
-  Do NOT write conversational phrases like "interesting fact about the number 42" —
-  they will return zero results. Write 2-5 keyword queries.
+- FILE_WRITE INPUT FORMAT: The file_write skill expects its parameter as "<path>|<content>"
+  with a pipe separator. If the content comes from an earlier skill, use the {{skill_id}}
+  placeholder AFTER the pipe. Example: "fact.txt|{{web_search}}" — NOT "fact.txt|web_search".
+- WEB_SEARCH QUERY TIP: The web_search skill uses the Tavily Search API.
+  Write a focused keyword query (e.g. "110 facts" or "Eiffel Tower height")
+  rather than a conversational sentence. Tavily returns the top result's
+  content as the answer, so a short query yields a usable fact.
 - If the goal is already fully accomplished based on prior results, set goal_complete to true
   and write a clear final_answer.
 - Keep skills_to_run as an empty list when goal_complete is true.
