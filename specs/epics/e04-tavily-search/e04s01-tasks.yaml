@@ -1,0 +1,38 @@
+# Story: e04s01 — WebSearchSkill Tavily client
+# Swap the DuckDuckGo call for POST api.tavily.com/search with answer+results parsing.
+
+story_id: e04s01
+title: "WebSearchSkill — Tavily Search API client"
+bcps: 3
+status: in_progress
+
+tasks:
+  - id: e04s01-t001
+    description: "Verify Tavily POST /search client + WebSearchOutput mapping (drafted in tree)"
+    verify: "grep -q 'api.tavily.com/search' src/tools/web_search.rs && grep -q 'include_answer' src/tools/web_search.rs && echo OK || echo MISSING"
+    risk: P0
+    status: in_progress
+
+  - id: e04s01-t002
+    description: "Verify no-results path carries the Tavily answer"
+    verify: "grep -q 'No organic results' src/tools/web_search.rs && echo OK || echo MISSING"
+    risk: P2
+    status: in_progress
+
+  - id: e04s01-t003
+    description: "Verify HTTP error bail includes status code + body"
+    verify: "grep -q 'Tavily API returned HTTP' src/tools/web_search.rs && echo OK || echo MISSING"
+    risk: P1
+    status: in_progress
+
+  - id: e04s01-t004
+    description: "Verify empty-key bail with actionable message"
+    verify: "grep -q 'TAVILY_API_KEY not set' src/tools/web_search.rs && echo OK || echo MISSING"
+    risk: P1
+    status: in_progress
+
+  - id: e04s01-t005
+    description: "Verify SkillDefinition v2.0.0 + Tavily description"
+    verify: "grep -q 'version: \"2.0.0\"' src/tools/web_search.rs && grep -q 'Tavily' src/tools/web_search.rs && echo OK || echo MISSING"
+    risk: P3
+    status: in_progress

@@ -50,7 +50,7 @@ PlannerSkill → LLM prompt → PlanOutput → Engine runs tool skills → loop 
 - `src/core/context/` — WorkflowContext<I> shared run state
 - `src/core/models/` — ExecutionSummary, SkillOutcome, WorkflowDiagnostic
 - `src/runtime/` — ReAct loop: PlannerSkill, RuntimePlugin
-- `src/tools/` — Tool skills: WebSearchSkill (DuckDuckGo)
+- `src/tools/` — Tool skills: WebSearchSkill (Tavily)
 - `src/setup/` — AppConfig from env vars, Rig runtime wrapper
 
 ## Key Design Decisions

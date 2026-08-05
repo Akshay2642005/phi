@@ -1,7 +1,8 @@
 # Planning status — Discover-phase checklist
 # Used by run-planning to track discover-phase progress.
 
-discover_complete: false
-elaborate_complete: false
-design_complete: false
-plan_ready: false
+# e04 (Tavily migration): scoped, sliced, planned. Planning spine complete.
+discover_complete: true
+elaborate_complete: true
+design_complete: true
+plan_ready: true

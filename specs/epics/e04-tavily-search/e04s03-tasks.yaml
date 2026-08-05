@@ -1,0 +1,26 @@
+# Story: e04s03 — Docs & env example
+# TAVILY_API_KEY in .env.example + docs/getting-started.md; purge DuckDuckGo refs.
+
+story_id: e04s03
+title: "Docs & env example — TAVILY_API_KEY everywhere"
+bcps: 2
+status: in_progress
+
+tasks:
+  - id: e04s03-t001
+    description: "Add TAVILY_API_KEY to .env.example with Tavily URL comment"
+    verify: "grep -q 'TAVILY_API_KEY' .env.example && echo OK || echo MISSING"
+    risk: P3
+    status: not_started
+
+  - id: e04s03-t002
+    description: "Add TAVILY_API_KEY to docs/getting-started.md env reference"
+    verify: "grep -q 'TAVILY_API_KEY' docs/getting-started.md && echo OK || echo MISSING"
+    risk: P3
+    status: not_started
+
+  - id: e04s03-t003
+    description: "Sweep: zero DuckDuckGo references across src/, docs/, *.md, .env.example"
+    verify: "grep -rni 'duckduckgo' src/ docs/ README.md AGENTS.md CLAUDE.md CONVENTIONS.md .env.example specs/ 2>/dev/null | wc -l | awk '{if($1==0) print \"OK\"; else print \"LEFTOVERS: \"$1}'"
+    risk: P3
+    status: not_started

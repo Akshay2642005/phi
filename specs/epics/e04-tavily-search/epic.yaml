@@ -1,0 +1,33 @@
+# Epic: e04 — Phase 4: Tavily Web Search Migration
+# Swap web_search from DuckDuckGo Instant Answers to the Tavily Search API.
+
+id: e04
+title: "Phase 4 — Tavily web search migration"
+description: >
+  The web_search tool skill currently calls the DuckDuckGo Instant Answer API,
+  which returns thin snippets and fails on conversational queries. This epic
+  swaps the provider to Tavily (POST https://api.tavily.com/search), plumbs a
+  TAVILY_API_KEY through config/Vault/plugin/main, updates the planner prompt
+  tip and all docs + env example, and adds regression tests for the new
+  parsing/error paths. The implementation was drafted in the working tree on
+  master (uncommitted); this epic verifies, completes, and lands it.
+
+total_bcps: 8
+
+stories:
+  - id: e04s01
+    title: "WebSearchSkill — Tavily Search API client"
+    bcps: 3
+    status: in_progress
+  - id: e04s02
+    title: "TAVILY_API_KEY wiring — config, Vault secrets, RuntimePlugin"
+    bcps: 2
+    status: in_progress
+  - id: e04s03
+    title: "Docs & env example — TAVILY_API_KEY everywhere"
+    bcps: 2
+    status: in_progress
+  - id: e04s04
+    title: "Regression tests — Tavily parsing, error paths, empty-key bail"
+    bcps: 1
+    status: not_started

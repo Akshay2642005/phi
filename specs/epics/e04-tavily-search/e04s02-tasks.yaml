@@ -1,0 +1,38 @@
+# Story: e04s02 — TAVILY_API_KEY wiring
+# AppConfig field, Vault secrets field, RuntimePlugin constructor, main.rs.
+
+story_id: e04s02
+title: "TAVILY_API_KEY wiring — config, Vault secrets, RuntimePlugin"
+bcps: 2
+status: in_progress
+
+tasks:
+  - id: e04s02-t001
+    description: "Verify AppConfig.tavily_api_key + from_env/from_vault population"
+    verify: "grep -q 'tavily_api_key' src/setup/config.rs && grep -q 'TAVILY_API_KEY' src/setup/config.rs && echo OK || echo MISSING"
+    risk: P1
+    status: in_progress
+
+  - id: e04s02-t002
+    description: "Verify Vault OllamaSecrets carries TAVILY_API_KEY (serde default)"
+    verify: "grep -q 'TAVILY_API_KEY' src/setup/vault.rs && echo OK || echo MISSING"
+    risk: P1
+    status: in_progress
+
+  - id: e04s02-t003
+    description: "Verify RuntimePlugin passes key to WebSearchSkill::new"
+    verify: "grep -q 'tavily_api_key' src/runtime/plugin.rs && grep -q 'WebSearchSkill::new(self.tavily_api_key' src/runtime/plugin.rs && echo OK || echo MISSING"
+    risk: P1
+    status: in_progress
+
+  - id: e04s02-t004
+    description: "Verify main.rs supplies container.config.tavily_api_key"
+    verify: "grep -q 'config.tavily_api_key' src/main.rs && echo OK || echo MISSING"
+    risk: P1
+    status: in_progress
+
+  - id: e04s02-t005
+    description: "Verify clean compile with new constructor signature everywhere"
+    verify: "cargo check 2>&1 | tail -1 | grep -q 'Finished' && echo OK || echo FAIL"
+    risk: P0
+    status: in_progress

@@ -2,15 +2,15 @@
 # Updated automatically by bigpowers skills. Do not hand-edit runtime keys.
 
 session:
-  active_flow: documentation
-  active_epic_id: e03
-  active_story_id: docs-and-multi-step-react
+  active_flow: planning
+  active_epic_id: e04
+  active_story_id: null
   step_index: 0
   mode: solo
 
 handoff:
-  next_skill: kickoff-branch
-  notes: "Bug fix: infinite ReAct loop fixed. Root cause: LLM kept selecting already-completed skills. Fix: (1) deduplicate completed_skills display, (2) runtime filters out already-completed skills before running them, (3) MAX_ITERATIONS=20 safety limit. 161 tests, zero clippy warnings."
+  next_skill: scope-work
+  notes: "Closeout (A) done: e03 (Docs & Multi-step ReAct loop) registered as delivered — BUG-20260725T1619 infinite-loop fix + ADR-0001 written, release-plan/execution-status updated. Next: plan e04 (Tavily migration) via scope-work → slice-tasks → plan-work, then land the half-done working-tree changes on a feature branch."
 
 git:
   branch: master
