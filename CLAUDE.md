@@ -27,7 +27,7 @@ src/
 ├── bootstrap/           # AppContainer, config, Rig/Ollama runtime
 ├── core/                # Engine: workflow, skill, LLM, events, errors, IDs
 ├── runtime/             # ReAct loop: PlannerSkill, RuntimePlugin
-├── tools/               # Tool skills: web_search (DuckDuckGo)
+├── tools/               # Tool skills: web_search (Tavily)
 ├── setup/               # Config from env vars
 ├── api/                 # (empty) future HTTP API
 └── examples/            # basic_workflow.rs

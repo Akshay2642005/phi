@@ -23,6 +23,8 @@ pub struct OllamaSecrets {
     pub ollama_base_url: String,
     #[serde(rename = "OLLAMA_MODEL")]
     pub ollama_model: String,
+    #[serde(rename = "TAVILY_API_KEY", default)]
+    pub tavily_api_key: String,
 }
 
 /// Fetch Ollama secrets from Vault using AppRole authentication.

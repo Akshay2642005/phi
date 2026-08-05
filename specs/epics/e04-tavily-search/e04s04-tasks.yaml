@@ -1,0 +1,32 @@
+# Story: e04s04 — Regression tests for Tavily client
+# Offline unit tests: parsing, no-results, empty-key bail, HTTP error path.
+
+story_id: e04s04
+title: "Regression tests — Tavily parsing, error paths, empty-key bail"
+bcps: 1
+status: not_started
+
+tasks:
+  - id: e04s04-t001
+    description: "RED — parsing tests: answer+results, no-results-with-answer, empty results, bad JSON"
+    verify: "grep -q '#[test]' src/tools/web_search.rs && echo OK || echo MISSING"
+    risk: P1
+    status: not_started
+
+  - id: e04s04-t002
+    description: "GREEN — minimal refactor (pure mapping fn) so parsing tests pass offline"
+    verify: "cargo test -- web_search 2>&1 | grep 'test result' | grep -q '0 failed' && echo OK || echo FAIL"
+    risk: P1
+    status: not_started
+
+  - id: e04s04-t003
+    description: "Add empty-key guard test (error mentions TAVILY_API_KEY, no request)"
+    verify: "cargo test -- web_search 2>&1 | grep 'test result' | grep -q '0 failed' && echo OK || echo FAIL"
+    risk: P1
+    status: not_started
+
+  - id: e04s04-t004
+    description: "Full suite + clippy clean"
+    verify: "cargo test 2>&1 | grep 'test result' | awk -F'[ ;]' '{p+=$4; f+=$6} END {print \"passed:\"p\" failed:\"f}' && cargo clippy --all-targets 2>&1 | grep -cE '^(warning|error)' | awk '{if($1==0) print \"clippy OK\"; else print \"clippy issues: \"$1}'"
+    risk: P0
+    status: not_started

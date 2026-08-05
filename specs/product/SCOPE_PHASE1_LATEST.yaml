@@ -1,0 +1,129 @@
+# Scope — AI Workflow Engine Phase 1: Engine Completion
+# Written by: scope-work (planning spine step 1 of 3)
+# Date: 2026-07-07
+
+core_value: >
+  A generic, DAG-driven orchestration framework for AI agent skills in Rust
+  that actually runs workflows end-to-end.
+
+summary: >
+  The AI Workflow Engine has a solid core — Workflow<I>, SkillRegistry, DAG
+  graph, planner, scheduler, executor, event bus, and cancellation token —
+  but the execution path is not wired. main() builds AppContainer and logs
+  "ready" without triggering any workflow run. This phase completes the engine
+  internals so that the engine can actually execute DAG workflows with proper
+  context, parallel execution, cancellation, timeouts, retries, diagnostics,
+  and observability through a proper initialize → tick → finalize loop.
+
+  Phase 1 has 15 steps total. Steps 1-6 (workflow definition, registry,
+  dependency resolution, planner, scheduler, executor) are verified DONE
+  from codebase audit. Steps 7-15 are what this scope covers.
+
+in_scope:
+  - "Step 7 — WorkflowContext: Add ArtifactRef storage, ExecutionMetadata lifecycle,
+    embedded EventBus, runtime metrics counters to the shared execution context"
+  - "Step 8 — Execution loop: Replace the single-pass loop with a proper
+    initialize → while !completed { scheduler.tick(); executor.execute_ready();
+    update states; emit events; } → finalize engine loop"
+  - "Step 9 — Parallel execution: Use tokio::spawn + JoinSet to run ready nodes
+    concurrently instead of sequentially"
+  - "Step 10 — Cancellation: Wire existing CancellationToken through the engine
+    loop and add tokio::signal::ctrl_c handling at the application level"
+  - "Step 11 — Timeout hierarchy: Per-node timeout, per-workflow timeout, global
+    default, using tokio::time::timeout"
+  - "Step 12 — Retry engine: Linear, Exponential, Jitter retry strategies with
+    max retries and retry predicates"
+  - "Step 13 — Execution diagnostics: Per-node and per-workflow tracking of
+    start time, end time, duration, status, retry count, error capture, warnings,
+    outputs snapshot"
+  - "Step 14 — Observability: Emit all EngineEvent variants (WorkflowStarted,
+    NodeQueued, NodeStarted, NodeFinished, NodeFailed, WorkflowFinished) at the
+    correct lifecycle points"
+  - "Step 15 — Engine tests: Integration tests covering diamond DAG, linear DAG,
+    branch DAG, cycle detection, retry, timeout, parallel, deadlock, cancel,
+    panic, empty workflow, large graphs (1000 nodes, 5000 edges)"
+
+out_of_scope:
+  - "Phase 2 — Workflow DSL (YAML/JSON/RON/TOML serialization of workflows).
+    Reason: The builder API works; serialization is a future ergonomic improvement."
+  - "Phase 3 — Additional LLM providers (OpenAI, Anthropic, Groq, Gemini).
+    Reason: Only Ollama is needed for Phase 1 validation."
+  - "Phase 4 — Official skill library. Reason: Skills are domain-specific;
+    the framework provides the Skill<I> trait for users to implement."
+  - "Phase 5 — Persistence and checkpointing (SQLite, Postgres, Redis).
+    Reason: In-memory execution is sufficient for Phase 1 correctness verification."
+  - "Phase 6 — Scheduling (cron, webhook, queue). Reason: Scheduling is a
+    separate concern that runs on top of the engine."
+  - "Phase 7 — OpenTelemetry, tracing, metrics, dashboard.
+    Reason: EventBus-based observability in Step 14 provides the foundation;
+    external observability integrations are future work."
+  - "Phase 8 — Distributed execution (workers, task queues, leader election).
+    Reason: Distributed execution requires a stable single-node engine first."
+  - "Phase 9 — Cargo publish and public SDK.
+    Reason: The API surface must stabilize through internal use first."
+  - "WASM compilation support. Reason: Not a priority for the core engine."
+  - "HTTP server / API endpoints. Reason: The src/api/ module is reserved for
+    future use when an HTTP interface is needed."
+  - "Human-in-the-loop / interrupt/resume patterns.
+    Reason: Requires checkpointing (Phase 5) as a prerequisite."
+  - "Streaming execution events. Reason: Requires parallel execution (Step 9)
+    as a foundation; deferred to post-Phase 1."
+
+constraints:
+  - "Generic Workflow<I> design must be preserved — not tied to ReAct/agent use cases"
+  - "All existing public APIs must remain backward-compatible"
+  - "petgraph must remain fully encapsulated behind WorkflowGraph API"
+  - "No new external crate dependencies (current: tokio, dashmap, petgraph, rig, etc.)"
+  - "No HTTP server, no WASM, no new binary targets"
+  - "#![allow(dead_code, unused)] at crate root must be preserved — framework items
+    will remain intentionally unused until domain workflows are registered"
+  - "All changes must have corresponding tests"
+  - "Single crate structure must be preserved (no workspace)"
+
+success_criteria:
+  - "main() can execute a complete workflow end-to-end and produce a WorkflowResult"
+  - "All 9 remaining Phase 1 steps are implemented with tests"
+  - "cargo test passes with 100+ tests (up from current ~60)"
+  - "cargo clippy passes with zero warnings"
+  - "cargo fmt --check passes"
+  - "Diamond DAG: nodes B and C execute concurrently after A completes"
+  - "Cancellation via Ctrl+C stops all running skills cleanly"
+  - "Timeout: a node that exceeds its per-node timeout is failed with TimeoutError"
+  - "Retry: a flaky skill retries up to N times with correct backoff strategy"
+  - "Execution diagnostics capture start/end/duration/retry_count/error for every node"
+  - "All EngineEvent variants are emitted at correct lifecycle points"
+
+references:
+  - "specs/planning-context.yaml — Detailed step-by-step spec for all 9 remaining steps"
+  - "specs/product/VISION_LATEST.yaml — Project north star"
+  - "specs/tech-architecture/tech-stack.md — Tech stack documentation"
+  - "AGENTS.md — Codebase architecture and key types"
+
+# Prior Art (inherited from research-first, 2026-07-07)
+prior_art:
+  - name: LangGraph (Python)
+    url: https://github.com/langchain-ai/langgraph
+    verdict: compose
+    notes: "Reference architecture. StateGraph + Pregel engine + checkpointing."
+  - name: langgraph-rust
+    url: https://github.com/Onelevenvy/langgraph-rust
+    verdict: extend
+    notes: "Most mature Rust LangGraph port. StateGraph, checkpoints, ReAct, streaming."
+  - name: metalcraft
+    url: https://github.com/rust4ai/metalcraft
+    verdict: extend
+    notes: "LangGraph-style with Reducer trait, cyclic graphs, HITL, Rig integration."
+  - name: juncture
+    url: https://github.com/greatwallisme/juncture
+    verdict: extend
+    notes: "Most comprehensive LangGraph Rust port. WASM, observability dashboard."
+  - name: oxidizedgraph
+    url: https://github.com/stevedores-org/oxidizedgraph
+    verdict: compose
+    notes: "Uses petgraph (same as us). Validates our petgraph choice."
+
+our_differentiation:
+  - "Generic over input type: Workflow<I> works with any domain type"
+  - "Clean separation between core DAG engine and ReAct runtime"
+  - "petgraph-backed DAG with full encapsulation"
+  - "EventBus with strongly typed events"

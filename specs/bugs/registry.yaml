@@ -1,2 +1,10 @@
 # Bugs registry
-bugs: []
+bugs:
+  - bug_id: BUG-20260725T1619
+    date: 2026-07-25
+    severity: High
+    priority: High
+    scope: runtime
+    summary: "Infinite ReAct loop — planner re-nominates completed skills; fixed via completed-skill filtering + MAX_ITERATIONS=20"
+    status: resolved
+    file: specs/bugs/BUG-20260725T1619-infinite-react-loop.md

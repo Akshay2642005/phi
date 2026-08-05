@@ -2,10 +2,12 @@
 # Release index with WSJF-ordered epic list.
 
 release:
-  version: "0.2.0" # Mirror — the real version is determined by
+  version: "0.3.0" # Mirror — the real version is determined by
   bump_hint: minor # semantic-release at merge time.
-  codename: "wired-runtime"
-  description: "Phase 2 — Wire the Runtime (CLI, ReAct loop, tool skills, retry fix)"
+  codename: "react-runtime"
+  description: "Phase 3 — Multi-step ReAct runtime, user docs, Tavily search"
+
+# e01/e02 shipped as v0.2.0 "wired-runtime" (see git tags).
 
 epics:
   - id: e01
@@ -61,3 +63,41 @@ epics:
       - id: e02s05
         title: "ReAct integration test — mock LLM end-to-end"
         bcps: 5
+
+  - id: e03
+    title: "Phase 3 — Docs & Multi-step ReAct loop"
+    description: "ReActRuntime orchestrator with true Plan-Act-Observe iteration, user-facing docs (README, docs/), and the infinite-loop termination fix. Delivered via #2/#3/f23c775, merged at 1fb6c83."
+    bcps: 14
+    status: complete
+    stories:
+      - id: e03s01
+        title: "ReActRuntime — multi-step Plan-Act-Observe orchestrator"
+        bcps: 6
+      - id: e03s02
+        title: "SkillRegistry::filter_to_ids() — tool sub-registries"
+        bcps: 2
+      - id: e03s03
+        title: "User-facing docs — README, docs/{index,architecture,getting-started,skill-development}"
+        bcps: 3
+      - id: e03s04
+        title: "Infinite-loop fix — completed-skill filter + MAX_ITERATIONS=20"
+        bcps: 3
+
+  - id: e04
+    title: "Phase 4 — Tavily web search migration"
+    description: "Swap web_search from DuckDuckGo Instant Answers to the Tavily Search API; wire TAVILY_API_KEY through config/Vault/plugin; update docs and env example."
+    bcps: 8
+    status: planned
+    stories:
+      - id: e04s01
+        title: "WebSearchSkill — Tavily Search API client"
+        bcps: 3
+      - id: e04s02
+        title: "TAVILY_API_KEY wiring — config, Vault secrets, RuntimePlugin"
+        bcps: 2
+      - id: e04s03
+        title: "Docs & env example — TAVILY_API_KEY everywhere"
+        bcps: 2
+      - id: e04s04
+        title: "Regression tests — Tavily response parsing, error paths, empty-key bail"
+        bcps: 1

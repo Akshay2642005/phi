@@ -76,7 +76,7 @@ ReAct runtime: PlannerSkill calls LLM, engine runs tool skills, loops until goal
 | **ReAct runtime** | `src/runtime/` | Planner skill + tool skills (`RuntimeInput`) |
 | **Planner skill** | `src/runtime/planner.rs` | LLM decides which skills to run (ReAct Reason step) |
 | **Runtime plugin** | `src/runtime/plugin.rs` | Registers `PlannerSkill` + tool skills |
-| **Tool skills** | `src/tools/` | Currently: `web_search` (DuckDuckGo) |
+| **Tool skills** | `src/tools/` | Currently: `web_search` (Tavily) |
 | **Events system** | `src/core/events/` | `EventBus` (broadcast channel), strongly typed events |
 | **Error types** | `src/core/errors/mod.rs` | `WorkflowError`, `SkillError`, `EngineError` |
 | **ID types** | `src/core/ids.rs` | `WorkflowId`, `ExecutionId`, `NodeId`, etc. |
@@ -141,7 +141,7 @@ ReAct runtime: PlannerSkill calls LLM, engine runs tool skills, loops until goal
 
 | Symbol | File | Description |
 |--------|------|-------------|
-| `WebSearchSkill` | `tools/web_search.rs` | DuckDuckGo Instant Answer API search tool |
+| `WebSearchSkill` | `tools/web_search.rs` | Tavily Search API tool |
 
 ---
 
@@ -361,7 +361,7 @@ src/
 │   └── rig.rs                  # RigRuntime wrapper
 └── tools/
     ├── mod.rs
-    └── web_search.rs           # WebSearchSkill (DuckDuckGo)
+    └── web_search.rs           # WebSearchSkill (Tavily)
 ```
 
 ---

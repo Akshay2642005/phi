@@ -46,7 +46,10 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // Register runtime skills (PlannerSkill + tools).
-    let plugin = RuntimePlugin::new(container.llm.clone());
+    let plugin = RuntimePlugin::new(
+        container.llm.clone(),
+        container.config.tavily_api_key.clone(),
+    );
     let mut plugin_ctx = PluginContext::<RuntimeInput>::new();
     plugin.register(&mut plugin_ctx);
     let registry = plugin_ctx.into_registry();
